@@ -1,0 +1,306 @@
+diff --git a/src/pointer_input.cpp b/src/pointer_input.cpp
+index 161cf3d..3a65a99 100644
+--- a/src/pointer_input.cpp
++++ b/src/pointer_input.cpp
+@@ -884,6 +884,14 @@ QPointF PointerInputRedirection::applyEdgeBarrier(const QPointF &pos, const QPoi
+         return pos;
+     }
+     const LogicalOutput *lastOutput = workspace()->outputAt(m_pos);
++    // Skip barriers at interior edges: when the cursor is crossing from one
++    // output to another (not leaving the virtual desktop entirely), let it
++    // move freely.  Barriers should only apply at the outer boundary of the
++    // combined display area.
++    if (currentOutput != lastOutput) {
++        m_movementInEdgeBarrier = QPointF();
++        return pos;
++    }
+     QPointF newPos = confineToBoundingBox(pos, lastOutput->geometry());
+     const auto type = edgeBarrierType(newPos, lastOutput->geometry());
+     if (m_lastEdgeBarrierType != type) {
+diff --git a/src/screenedge.cpp b/src/screenedge.cpp
+index 6fc4f7e..46dff3b 100644
+--- a/src/screenedge.cpp
++++ b/src/screenedge.cpp
+@@ -1047,6 +1047,110 @@ bool ScreenEdges::remainActiveOnFullscreen() const
+     return m_remainActiveOnFullscreen;
+ }
+ 
++/**
++ * Compute the convex (outward-pointing) corners of the outer perimeter formed
++ * by the union of all output geometries.
++ *
++ * The Region class decomposes the union into horizontal bands of non-overlapping
++ * rectangles sorted in y-x order.  By walking the bands top-to-bottom and
++ * comparing the left/right extents of adjacent bands we can identify every
++ * vertex where the perimeter turns outward -- these are the points where the
++ * mouse cursor can get trapped against two edges simultaneously.
++ */
++static std::vector<PerimeterCorner> findPerimeterCorners(const QList<LogicalOutput *> &outputs)
++{
++    if (outputs.isEmpty()) {
++        return {};
++    }
++
++    // Build the union region of all outputs.
++    Region displayRegion;
++    for (const LogicalOutput *output : outputs) {
++        displayRegion += output->geometry();
++    }
++
++    const auto rects = displayRegion.rects();
++    if (rects.empty()) {
++        return {};
++    }
++
++    // Group rects into horizontal bands.  Each band is a set of rects sharing
++    // the same top and bottom (y and height).  We store the leftmost x and
++    // rightmost x+width for each band.
++    struct Band
++    {
++        int top;
++        int bottom;
++        int left;   // leftmost x of any rect in the band
++        int right;  // rightmost x+width of any rect in the band
++    };
++    std::vector<Band> bands;
++
++    for (const Rect &r : rects) {
++        if (!bands.empty() && bands.back().top == r.y() && bands.back().bottom == r.bottom()) {
++            // Same band -- extend extents.
++            bands.back().left = std::min(bands.back().left, r.x());
++            bands.back().right = std::max(bands.back().right, r.right());
++        } else {
++            bands.push_back({r.y(), r.bottom(), r.x(), r.right()});
++        }
++    }
++
++    std::vector<PerimeterCorner> corners;
++
++    // First band: top-left and top-right corners of the overall display.
++    corners.push_back({ElectricTopLeft, bands.front().left, bands.front().top});
++    corners.push_back({ElectricTopRight, bands.front().right, bands.front().top});
++
++    // Walk adjacent bands and find convex corners at each transition.
++    for (size_t i = 0; i + 1 < bands.size(); ++i) {
++        const Band &upper = bands[i];
++        const Band &lower = bands[i + 1];
++
++        // Left side: compare left extents.
++        if (lower.left > upper.left) {
++            // Lower band is narrower on the left -- the upper band's left side
++            // sticks out, creating a BottomLeft corner on the upper band.
++            corners.push_back({ElectricBottomLeft, upper.left, upper.bottom});
++        } else if (lower.left < upper.left) {
++            // Lower band is wider on the left -- the lower band's left side
++            // sticks out, creating a TopLeft corner on the lower band.
++            corners.push_back({ElectricTopLeft, lower.left, lower.top});
++        }
++
++        // Right side: compare right extents.
++        if (lower.right < upper.right) {
++            // Lower band is narrower on the right -- the upper band's right side
++            // sticks out, creating a BottomRight corner on the upper band.
++            corners.push_back({ElectricBottomRight, upper.right, upper.bottom});
++        } else if (lower.right > upper.right) {
++            // Lower band is wider on the right -- the lower band's right side
++            // sticks out, creating a TopRight corner on the lower band.
++            corners.push_back({ElectricTopRight, lower.right, lower.top});
++        }
++    }
++
++    // Last band: bottom-left and bottom-right corners of the overall display.
++    corners.push_back({ElectricBottomLeft, bands.back().left, bands.back().bottom});
++    corners.push_back({ElectricBottomRight, bands.back().right, bands.back().bottom});
++
++    return corners;
++}
++
++/**
++ * Check whether a corner position is in the set of perimeter corners.
++ * Used by edge creation to decide whether to inset an edge endpoint.
++ */
++static bool hasCornerAt(const std::vector<PerimeterCorner> &corners, int x, int y)
++{
++    for (const auto &c : corners) {
++        if (c.x == x && c.y == y) {
++            return true;
++        }
++    }
++    return false;
++}
++
+ void ScreenEdges::recreateEdges()
+ {
+     std::vector<std::unique_ptr<Edge>> oldEdges = std::move(m_edges);
+@@ -1055,34 +1159,65 @@ void ScreenEdges::recreateEdges()
+     Region processedRegion;
+ 
+     const auto outputs = workspace()->outputs();
++
++    // Pre-compute perimeter corners for the AllScreenCorners mode so that
++    // edge creation can check whether to inset endpoints.
++    std::vector<PerimeterCorner> perimeterCorners;
++    if (isAllScreenCorners()) {
++        perimeterCorners = findPerimeterCorners(outputs);
++    }
++
+     for (LogicalOutput *output : outputs) {
+         const Region screen = Region(output->geometry()).subtracted(processedRegion);
+         processedRegion += screen;
+         for (const Rect &screenPart : screen.rects()) {
+             if (isLeftScreen(screenPart, fullArea)) {
+                 // left most screen
+-                createVerticalEdge(ElectricLeft, screenPart, fullArea, output);
++                createVerticalEdge(ElectricLeft, screenPart, fullArea, output, perimeterCorners);
+             }
+             if (isRightScreen(screenPart, fullArea)) {
+                 // right most screen
+-                createVerticalEdge(ElectricRight, screenPart, fullArea, output);
++                createVerticalEdge(ElectricRight, screenPart, fullArea, output, perimeterCorners);
+             }
+             if (isTopScreen(screenPart, fullArea)) {
+                 // top most screen
+-                createHorizontalEdge(ElectricTop, screenPart, fullArea, output);
++                createHorizontalEdge(ElectricTop, screenPart, fullArea, output, perimeterCorners);
+             }
+             if (isBottomScreen(screenPart, fullArea)) {
+                 // bottom most screen
+-                createHorizontalEdge(ElectricBottom, screenPart, fullArea, output);
++                createHorizontalEdge(ElectricBottom, screenPart, fullArea, output, perimeterCorners);
+             }
+         }
++    }
++
++    // Create corner edges.
++    if (isAllScreenCorners()) {
++        for (const auto &corner : perimeterCorners) {
++            // Map the corner position to the output that contains it.
++            // Corner coordinates are at the edge of screen rects, so adjust
++            // the probe point slightly inward to land inside the correct output.
++            int probeX = corner.x;
++            int probeY = corner.y;
++            if (corner.border == ElectricTopRight || corner.border == ElectricBottomRight) {
++                probeX -= 1;
++            }
++            if (corner.border == ElectricBottomLeft || corner.border == ElectricBottomRight) {
++                probeY -= 1;
++            }
++            LogicalOutput *cornerOutput = workspace()->outputAt(QPointF(probeX, probeY));
++
++            // Position the corner edge: for right/bottom borders the touch
++            // target extends leftward/upward from the corner point.
++            int edgeX = corner.x;
++            int edgeY = corner.y;
++            if (corner.border == ElectricTopRight || corner.border == ElectricBottomRight) {
++                edgeX -= m_touchTarget;
++            }
++            if (corner.border == ElectricBottomLeft || corner.border == ElectricBottomRight) {
++                edgeY -= m_touchTarget;
++            }
+ 
+-        if (isAllScreenCorners()) {
+-            const Rect geo = output->geometry();
+-            m_edges.push_back(createEdge(ElectricTopLeft, geo.x(), geo.y(), m_touchTarget, m_touchTarget, output));
+-            m_edges.push_back(createEdge(ElectricTopRight, geo.x() + geo.width() - m_touchTarget, geo.y(), m_touchTarget, m_touchTarget, output));
+-            m_edges.push_back(createEdge(ElectricBottomLeft, geo.x(), geo.y() + geo.height() - m_touchTarget, m_touchTarget, m_touchTarget, output));
+-            m_edges.push_back(createEdge(ElectricBottomRight, geo.x() + geo.width() - m_touchTarget, geo.y() + geo.height() - m_touchTarget, m_touchTarget, m_touchTarget, output));
++            m_edges.push_back(createEdge(corner.border, edgeX, edgeY, m_touchTarget, m_touchTarget, cornerOutput));
+         }
+     }
+     auto split = std::partition(oldEdges.begin(), oldEdges.end(), [](const auto &edge) {
+@@ -1112,7 +1247,7 @@ void ScreenEdges::recreateEdges()
+     }
+ }
+ 
+-void ScreenEdges::createVerticalEdge(ElectricBorder border, const Rect &screen, const Rect &fullArea, LogicalOutput *output)
++void ScreenEdges::createVerticalEdge(ElectricBorder border, const Rect &screen, const Rect &fullArea, LogicalOutput *output, const std::vector<PerimeterCorner> &perimeterCorners)
+ {
+     if (border != ElectricRight && border != KWin::ElectricLeft) {
+         return;
+@@ -1140,13 +1275,22 @@ void ScreenEdges::createVerticalEdge(ElectricBorder border, const Rect &screen,
+         return;
+     }
+     if (isAllScreenCorners()) {
+-        height -= 2 * m_cornerOffset;
+-        y += m_cornerOffset;
++        // Only inset the edge at endpoints where a perimeter corner exists.
++        const int cornerX = (border == ElectricLeft) ? screen.left() : screen.right();
++        const bool hasTopCorner = hasCornerAt(perimeterCorners, cornerX, screen.top());
++        const bool hasBottomCorner = hasCornerAt(perimeterCorners, cornerX, screen.bottom());
++        if (hasTopCorner) {
++            height -= m_cornerOffset;
++            y += m_cornerOffset;
++        }
++        if (hasBottomCorner) {
++            height -= m_cornerOffset;
++        }
+     }
+     m_edges.push_back(createEdge(border, x, y, m_touchTarget, height, output));
+ }
+ 
+-void ScreenEdges::createHorizontalEdge(ElectricBorder border, const Rect &screen, const Rect &fullArea, LogicalOutput *output)
++void ScreenEdges::createHorizontalEdge(ElectricBorder border, const Rect &screen, const Rect &fullArea, LogicalOutput *output, const std::vector<PerimeterCorner> &perimeterCorners)
+ {
+     if (border != ElectricTop && border != ElectricBottom) {
+         return;
+@@ -1167,8 +1311,17 @@ void ScreenEdges::createHorizontalEdge(ElectricBorder border, const Rect &screen
+         return;
+     }
+     if (isAllScreenCorners()) {
+-        width -= 2 * m_cornerOffset;
+-        x += m_cornerOffset;
++        // Only inset the edge at endpoints where a perimeter corner exists.
++        const int cornerY = (border == ElectricTop) ? screen.top() : screen.bottom();
++        const bool hasLeftCorner = hasCornerAt(perimeterCorners, screen.left(), cornerY);
++        const bool hasRightCorner = hasCornerAt(perimeterCorners, screen.right(), cornerY);
++        if (hasLeftCorner) {
++            x += m_cornerOffset;
++            width -= m_cornerOffset;
++        }
++        if (hasRightCorner) {
++            width -= m_cornerOffset;
++        }
+     }
+     const int y = (border == ElectricTop) ? screen.top() : screen.bottom() - m_touchTarget;
+     m_edges.push_back(createEdge(border, x, y, width, m_touchTarget, output));
+diff --git a/src/screenedge.h b/src/screenedge.h
+index ea0a8ab..830be05 100644
+--- a/src/screenedge.h
++++ b/src/screenedge.h
+@@ -28,6 +28,7 @@
+ #include <QObject>
+ 
+ #include <memory>
++#include <vector>
+ #include <xcb/xcb.h>
+ 
+ class QAction;
+@@ -198,6 +199,17 @@ private:
+  *
+  * @todo change way how Effects/Scripts can reserve an edge and are notified.
+  */
++
++/**
++ * Describes a convex corner on the outer perimeter of the combined display area.
++ */
++struct PerimeterCorner
++{
++    ElectricBorder border;
++    int x;
++    int y;
++};
++
+ class KWIN_EXPORT ScreenEdges : public QObject
+ {
+     Q_OBJECT
+@@ -367,8 +379,8 @@ private:
+     void setCursorPushBackDistance(const QSize &distance);
+     void setTimeThreshold(std::chrono::milliseconds threshold);
+     void setReActivationThreshold(std::chrono::milliseconds threshold);
+-    void createHorizontalEdge(ElectricBorder border, const Rect &screen, const Rect &fullArea, LogicalOutput *output);
+-    void createVerticalEdge(ElectricBorder border, const Rect &screen, const Rect &fullArea, LogicalOutput *output);
++    void createHorizontalEdge(ElectricBorder border, const Rect &screen, const Rect &fullArea, LogicalOutput *output, const std::vector<PerimeterCorner> &perimeterCorners = {});
++    void createVerticalEdge(ElectricBorder border, const Rect &screen, const Rect &fullArea, LogicalOutput *output, const std::vector<PerimeterCorner> &perimeterCorners = {});
+     std::unique_ptr<Edge> createEdge(ElectricBorder border, int x, int y, int width, int height, LogicalOutput *output, bool createAction = true);
+     void setActionForBorder(ElectricBorder border, ElectricBorderAction *oldValue, ElectricBorderAction newValue);
+     void setActionForTouchBorder(ElectricBorder border, ElectricBorderAction newValue);
