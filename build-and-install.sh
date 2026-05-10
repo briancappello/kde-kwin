@@ -16,7 +16,24 @@
 #    Also disables edge barriers at interior screen boundaries so the
 #    cursor moves freely between monitors.
 #
-# Mirrors the official Arch kwin PKGBUILD with our gesture patch added.
+# 3. Virtual Desktops KCM diagnostic logging (virtual-desktops-debug.patch):
+#    Adds [VDBUG]-tagged stderr traces to the KCM that drives
+#    System Settings > Window Management > Virtual Desktops, so we can
+#    capture exact state transitions while reproducing rename bugs.
+#    Disable by editing desktopsmodel.cpp and setting VDBUG_ENABLED to 0.
+#    See: kcmshell6 kcm_kwin_virtualdesktops 2>&1 | tee /tmp/vdbug.log
+#
+# 4. Virtual Desktops id-heal fix (virtual-desktops-fix.patch):
+#    VirtualDesktopManager::load() previously read the persisted
+#    Id_N entries verbatim, including legacy non-UUID values like the
+#    literal string "Desktop" that older Plasma versions sometimes
+#    wrote. Multiple desktops sharing the same id silently collapsed
+#    in the KCM (renaming one desktop renamed both, etc).  The patch
+#    validates each id is a well-formed unique UUID and assigns a
+#    fresh UUID otherwise, then persists the heal so it only happens
+#    once.
+#
+# Mirrors the official Arch kwin PKGBUILD with our patches added.
 #
 # Usage:
 #   ./build-and-install.sh          # build + install
@@ -97,6 +114,10 @@ patch -p1 -d "$UPSTREAM_CLONE" < "$SCRIPT_DIR/swap-gesture-fingers.patch"
 echo "    gesture swap patch applied cleanly"
 patch -p1 -d "$UPSTREAM_CLONE" < "$SCRIPT_DIR/screen-edge-corners.patch"
 echo "    screen edge corners patch applied cleanly"
+patch -p1 -d "$UPSTREAM_CLONE" < "$SCRIPT_DIR/virtual-desktops-debug.patch"
+echo "    virtual-desktops diagnostic logging patch applied cleanly"
+patch -p1 -d "$UPSTREAM_CLONE" < "$SCRIPT_DIR/virtual-desktops-fix.patch"
+echo "    virtual-desktops id-heal fix applied cleanly"
 
 # ---------------------------------------------------------------------------
 # 4. Configure + build

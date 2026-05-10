@@ -1,0 +1,108 @@
+diff --git a/src/virtualdesktops.cpp b/src/virtualdesktops.cpp
+index 38dc20c..2467730 100644
+--- a/src/virtualdesktops.cpp
++++ b/src/virtualdesktops.cpp
+@@ -22,6 +22,7 @@
+ // Qt
+ #include <QAction>
+ #include <QDebug>
++#include <QSet>
+ #include <QUuid>
+ 
+ #include <algorithm>
+@@ -716,6 +717,23 @@ void VirtualDesktopManager::updateLayout()
+     Q_EMIT rowsChanged(m_rows);
+ }
+ 
++// Returns true iff `id` looks like a valid UUID as produced by
++// QUuid::createUuid().toString(QUuid::WithoutBraces): a non-null UUID
++// when parsed, AND its canonical form (without braces) round-trips to
++// the same string. Catches both the empty case and legacy values like
++// the literal string "Desktop" that older Plasma versions persisted.
++static bool isWellFormedDesktopId(const QString &id)
++{
++    if (id.isEmpty()) {
++        return false;
++    }
++    const QUuid parsed = QUuid::fromString(id);
++    if (parsed.isNull()) {
++        return false;
++    }
++    return parsed.toString(QUuid::WithoutBraces) == id;
++}
++
+ void VirtualDesktopManager::load()
+ {
+     s_loadingDesktopSettings = true;
+@@ -727,6 +745,9 @@ void VirtualDesktopManager::load()
+     const int n = group.readEntry("Number", 1);
+     setCount(n);
+ 
++    // Pass 1: read names + raw ids from disk.
++    QList<QString> rawIds;
++    rawIds.reserve(n);
+     for (int i = 1; i <= n; i++) {
+         QString s = group.readEntry(QStringLiteral("Name_%1").arg(i), i18n("Desktop %1", i));
+ #if KWIN_BUILD_X11
+@@ -738,22 +759,55 @@ void VirtualDesktopManager::load()
+ #endif
+         m_desktops[i - 1]->setName(s);
+ 
+-        const QString sId = group.readEntry(QStringLiteral("Id_%1").arg(i), QString());
++        rawIds.append(group.readEntry(QStringLiteral("Id_%1").arg(i), QString()));
++    }
++
++    // Pass 2: validate ids. An id is kept iff it is well-formed AND not
++    // already used by an earlier desktop. Anything else gets a fresh UUID.
++    // This heals legacy/corrupted configs where multiple desktops share
++    // a non-UUID id like the literal "Desktop" written by older Plasma
++    // versions, which causes downstream tooling (the Virtual Desktops
++    // KCM, kglobalaccel desktop-switching shortcuts, ...) to silently
++    // collapse the desktops together.
++    bool healed = false;
++    QSet<QString> seenIds;
++    seenIds.reserve(n);
++    for (int i = 1; i <= n; i++) {
++        const QString sId = rawIds.at(i - 1);
++        QString assignId;
++        if (isWellFormedDesktopId(sId) && !seenIds.contains(sId)) {
++            assignId = sId;
++        } else {
++            assignId = generateDesktopId();
++            healed = true;
++            qWarning("Virtual desktop %d had invalid or duplicate persisted Id \"%s\"; assigning fresh UUID \"%s\".",
++                     i, qUtf8Printable(sId), qUtf8Printable(assignId));
++        }
++        seenIds.insert(assignId);
+ 
+         if (m_desktops[i - 1]->id().isEmpty()) {
+-            m_desktops[i - 1]->setId(sId.isEmpty() ? generateDesktopId() : sId);
++            m_desktops[i - 1]->setId(assignId);
+         } else {
+-            Q_ASSERT(sId.isEmpty() || m_desktops[i - 1]->id() == sId);
++            // Desktop already has an id (e.g. this is a re-load).  Keep
++            // its existing id; don't try to match assignId, which may be
++            // a freshly-generated heal value the live desktop never saw.
++            // The previous Q_ASSERT here only held when the persisted id
++            // was identical to the live id, which cannot be guaranteed.
++            seenIds.remove(assignId);
++            seenIds.insert(m_desktops[i - 1]->id());
+         }
+-
+-        // TODO: update desktop focus chain, why?
+-        //         m_desktopFocusChain.value()[i-1] = i;
+     }
+ 
+     int rows = group.readEntry<int>("Rows", 2);
+     m_rows = std::clamp(rows, 1, n);
+ 
+     s_loadingDesktopSettings = false;
++
++    // Persist healed ids so we don't keep re-healing on every startup
++    // and so external tooling sees the corrected values.
++    if (healed) {
++        save();
++    }
+ }
+ 
+ void VirtualDesktopManager::save()

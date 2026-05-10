@@ -1,0 +1,525 @@
+diff --git a/src/kcms/desktop/desktopsmodel.cpp b/src/kcms/desktop/desktopsmodel.cpp
+index eea367b..24c6e34 100644
+--- a/src/kcms/desktop/desktopsmodel.cpp
++++ b/src/kcms/desktop/desktopsmodel.cpp
+@@ -24,6 +24,67 @@
+ #include <QRegularExpression>
+ #include <QUuid>
+ 
++// ---- BEGIN VDBUG diagnostic logging ----
++// Set VDBUG_ENABLED to 0 to compile out all diagnostic output.
++#define VDBUG_ENABLED 1
++
++#if VDBUG_ENABLED
++#  include <QDebug>
++
++namespace {
++// Format an id verbatim, with length annotation so we can tell apart
++// "" / "Desktop" / "{uuid}" / etc.
++inline QString vdbg_fmtId(const QString &s)
++{
++    return QStringLiteral("<") + s + QStringLiteral(">|len=") + QString::number(s.size());
++}
++inline QString vdbg_fmtList(const QStringList &l)
++{
++    QStringList out;
++    out.reserve(l.size());
++    for (int i = 0; i < l.size(); ++i) {
++        out << QStringLiteral("[%1]=").arg(i) + vdbg_fmtId(l.at(i));
++    }
++    return QStringLiteral("(count=") + QString::number(l.size()) + QStringLiteral(") {")
++         + out.join(QStringLiteral(", ")) + QLatin1Char('}');
++}
++// Iterate the hash itself (NOT just the order list), so duplicates in the
++// order list do not produce phantom duplicate hash entries in the output.
++inline QString vdbg_fmtHash(const QHash<QString, QString> &h)
++{
++    QStringList parts;
++    parts.reserve(h.size());
++    for (auto it = h.constBegin(); it != h.constEnd(); ++it) {
++        parts << vdbg_fmtId(it.key()) + QStringLiteral(" => \"") + it.value() + QStringLiteral("\"");
++    }
++    return QStringLiteral("(size=") + QString::number(h.size()) + QStringLiteral(") {")
++         + parts.join(QStringLiteral(", ")) + QLatin1Char('}');
++}
++} // namespace
++
++#  define VDBUG_DUMP(self, label) do { \
++    qWarning().noquote() << "[VDBUG]" << label << "local desktops:" << vdbg_fmtList((self)->m_desktops); \
++    qWarning().noquote() << "[VDBUG]" << label << "local names   :" << vdbg_fmtHash((self)->m_names); \
++    qWarning().noquote() << "[VDBUG]" << label << "srvr  desktops:" << vdbg_fmtList((self)->m_serverSideDesktops); \
++    qWarning().noquote() << "[VDBUG]" << label << "srvr  names   :" << vdbg_fmtHash((self)->m_serverSideNames); \
++    qWarning().noquote() << "[VDBUG]" << label << "misc          : rows local=" << (self)->m_rows \
++                         << "srv=" << (self)->m_serverSideRows \
++                         << "userMod=" << (self)->m_userModified \
++                         << "srvMod=" << (self)->m_serverModified \
++                         << "pendingCalls=" << (self)->m_pendingCalls; \
++} while (0)
++
++#  define VDBUG_ENTER(tag) do { qWarning().noquote() << "[VDBUG] >> enter" << tag; VDBUG_DUMP(this, "  "); } while (0)
++#  define VDBUG_LEAVE(tag) do { VDBUG_DUMP(this, "  "); qWarning().noquote() << "[VDBUG] << leave" << tag; } while (0)
++#  define VDBUG_NOTE(...)  qWarning().noquote() << "[VDBUG]   note:" << __VA_ARGS__
++#else
++#  define VDBUG_DUMP(self, label) do { } while (0)
++#  define VDBUG_ENTER(tag)        do { } while (0)
++#  define VDBUG_LEAVE(tag)        do { } while (0)
++#  define VDBUG_NOTE(...)         do { } while (0)
++#endif
++// ---- END VDBUG diagnostic logging ----
++
+ namespace KWin
+ {
+ 
+@@ -165,6 +226,8 @@ int DesktopsModel::rows() const
+ 
+ void DesktopsModel::setRows(int rows)
+ {
++    VDBUG_ENTER("setRows");
++    VDBUG_NOTE("requested rows=" << rows);
+     if (!ready()) {
+         return;
+     }
+@@ -197,6 +260,7 @@ QString DesktopsModel::createDesktopName() const
+ 
+ void DesktopsModel::createDesktop()
+ {
++    VDBUG_ENTER("createDesktop (UI - 'Add Desktop' clicked)");
+     if (!ready()) {
+         return;
+     }
+@@ -207,6 +271,7 @@ void DesktopsModel::createDesktop()
+ 
+     m_desktops.append(dummyId);
+     m_names[dummyId] = createDesktopName();
++    VDBUG_NOTE("appended dummyId=" << dummyId << " auto-name=\"" << m_names.value(dummyId) << "\"");
+ 
+     endInsertRows();
+     Q_EMIT desktopCountChanged();
+@@ -216,6 +281,8 @@ void DesktopsModel::createDesktop()
+ 
+ void DesktopsModel::removeDesktop(const QString &id)
+ {
++    VDBUG_ENTER("removeDesktop (UI)");
++    VDBUG_NOTE("removing id=" << id);
+     if (!ready() || !m_desktops.contains(id)) {
+         return;
+     }
+@@ -235,7 +302,10 @@ void DesktopsModel::removeDesktop(const QString &id)
+ 
+ void DesktopsModel::setDesktopName(const QString &id, const QString &name)
+ {
++    VDBUG_ENTER("setDesktopName (UI)");
++    VDBUG_NOTE("id=" << id << " new name=\"" << name << "\" old name=\"" << m_names.value(id) << "\"");
+     if (!ready() || !m_desktops.contains(id)) {
++        VDBUG_NOTE("REJECTED: !ready() || !m_desktops.contains(id)");
+         return;
+     }
+ 
+@@ -250,11 +320,15 @@ void DesktopsModel::setDesktopName(const QString &id, const QString &name)
+ 
+ void DesktopsModel::syncWithServer()
+ {
++    VDBUG_ENTER("syncWithServer");
+     auto callFinished = [this](QDBusPendingCallWatcher *call) {
+         QDBusPendingReply<void> reply = *call;
+ 
+         if (reply.isError()) {
++            VDBUG_NOTE("D-Bus call FINISHED with ERROR:" << reply.error().message());
+             handleCallError();
++        } else {
++            VDBUG_NOTE("D-Bus call finished OK; pendingCalls now" << (m_pendingCalls - 1));
+         }
+ 
+         --m_pendingCalls;
+@@ -263,6 +337,7 @@ void DesktopsModel::syncWithServer()
+     };
+ 
+     if (m_desktops.count() > m_serverSideDesktops.count()) {
++        VDBUG_NOTE("branch: local count > server count -> CREATE on server");
+         auto call = QDBusMessage::createMethodCall(
+             s_serviceName,
+             s_virtDesktopsPath,
+@@ -271,6 +346,9 @@ void DesktopsModel::syncWithServer()
+ 
+         const int newIndex = m_serverSideDesktops.count();
+ 
++        VDBUG_NOTE("D-Bus createDesktop(pos=" << newIndex
++                   << ", name=\"" << m_names.value(m_desktops.at(newIndex)) << "\")"
++                   << " (dummy id at that pos =" << m_desktops.at(newIndex) << ")");
+         call.setArguments({(uint)newIndex, m_names.value(m_desktops.at(newIndex))});
+ 
+         ++m_pendingCalls;
+@@ -284,6 +362,7 @@ void DesktopsModel::syncWithServer()
+     }
+ 
+     if (m_desktops.count() < m_serverSideDesktops.count()) {
++        VDBUG_NOTE("branch: local count < server count -> REMOVE on server");
+         QStringListIterator i(m_serverSideDesktops);
+ 
+         i.toBack();
+@@ -292,6 +371,7 @@ void DesktopsModel::syncWithServer()
+             const QString &previous = i.previous();
+ 
+             if (!m_desktops.contains(previous)) {
++                VDBUG_NOTE("D-Bus removeDesktop(id=" << previous << ")");
+                 auto call = QDBusMessage::createMethodCall(
+                     s_serviceName,
+                     s_virtDesktopsPath,
+@@ -313,23 +393,47 @@ void DesktopsModel::syncWithServer()
+     }
+ 
+     // Sync ids. Replace dummy ids in the process.
++    VDBUG_NOTE("branch: counts equal; running 'Sync ids' loop UNCONDITIONALLY");
++    VDBUG_NOTE("  before sync-ids loop:");
++    VDBUG_NOTE("    m_desktops          =" << vdbg_fmtList(m_desktops));
++    VDBUG_NOTE("    m_serverSideDesktops=" << vdbg_fmtList(m_serverSideDesktops));
++    VDBUG_NOTE("    m_names             =" << vdbg_fmtHash(m_names));
+     for (int i = 0; i < m_serverSideDesktops.count(); ++i) {
+         const QString oldId = m_desktops.at(i);
+         const QString &newId = m_serverSideDesktops.at(i);
++        const QString takenName = m_names.value(oldId);
++        const bool willOverwrite = m_names.contains(newId) && oldId != newId;
++        VDBUG_NOTE("  sync-ids[" << i << "]: oldId=" << vdbg_fmtId(oldId)
++                                  << " newId=" << vdbg_fmtId(newId)
++                                  << " m_names[oldId]=\"" << takenName << "\""
++                                  << " m_names.contains(newId)=" << m_names.contains(newId)
++                                  << (oldId == newId
++                                       ? QStringLiteral(" (NO-OP)")
++                                       : willOverwrite
++                                           ? QStringLiteral(" *** OVERWRITES newId's existing value \"")
++                                               + m_names.value(newId) + QStringLiteral("\" ***")
++                                           : QStringLiteral(" (renaming key)")));
+         m_desktops[i] = newId;
+         m_names[newId] = m_names.take(oldId);
+     }
++    VDBUG_NOTE("  after  sync-ids loop:");
++    VDBUG_NOTE("    m_desktops          =" << vdbg_fmtList(m_desktops));
++    VDBUG_NOTE("    m_names             =" << vdbg_fmtHash(m_names));
+ 
+     Q_EMIT dataChanged(index(0, 0), index(rowCount() - 1, 0), QList<int>{Qt::DisplayRole});
+ 
+     // Sync names.
+     if (m_names != m_serverSideNames) {
++        VDBUG_NOTE("names differ; iterating to send first divergent setDesktopName");
+         QHashIterator<QString, QString> i(m_names);
+ 
+         while (i.hasNext()) {
+             i.next();
+ 
+             if (i.value() != m_serverSideNames.value(i.key())) {
++                VDBUG_NOTE("D-Bus setDesktopName(id=" << vdbg_fmtId(i.key())
++                           << ", name=\"" << i.value() << "\")  (server had \""
++                           << m_serverSideNames.value(i.key()) << "\")");
+                 auto call = QDBusMessage::createMethodCall(
+                     s_serviceName,
+                     s_virtDesktopsPath,
+@@ -354,6 +458,7 @@ void DesktopsModel::syncWithServer()
+ 
+     // Sync rows.
+     if (m_rows != m_serverSideRows) {
++        VDBUG_NOTE("D-Bus Set rows=" << m_rows << " (server had" << m_serverSideRows << ")");
+         auto call = QDBusMessage::createMethodCall(
+             s_serviceName,
+             s_virtDesktopsPath,
+@@ -368,11 +473,14 @@ void DesktopsModel::syncWithServer()
+ 
+         const QDBusPendingCallWatcher *watcher = new QDBusPendingCallWatcher(pending, this);
+         QObject::connect(watcher, &QDBusPendingCallWatcher::finished, this, callFinished);
++    } else {
++        VDBUG_NOTE("nothing more to sync; syncWithServer() returning");
+     }
+ }
+ 
+ void DesktopsModel::reset()
+ {
++    VDBUG_ENTER("reset (initial / D-Bus service appeared)");
+     auto getAllAndConnectCall = QDBusMessage::createMethodCall(
+         s_serviceName,
+         s_virtDesktopsPath,
+@@ -400,6 +508,7 @@ bool DesktopsModel::isDefaults() const
+ 
+ void DesktopsModel::defaults()
+ {
++    VDBUG_ENTER("defaults (Defaults button)");
+     beginResetModel();
+     // default is 1 desktop with 2 rows
+     // see kwin/virtualdesktops.cpp  VirtualDesktopGrid::VirtualDesktopGrid
+@@ -417,6 +526,7 @@ void DesktopsModel::defaults()
+ 
+ void DesktopsModel::load()
+ {
++    VDBUG_ENTER("load (KCM load() - usually triggered by KCM open or Reset)");
+     beginResetModel();
+     m_desktops = m_serverSideDesktops;
+     m_names = m_serverSideNames;
+@@ -429,6 +539,7 @@ void DesktopsModel::load()
+ 
+ void DesktopsModel::getAllAndConnect(const QDBusMessage &msg)
+ {
++    VDBUG_ENTER("getAllAndConnect (initial server snapshot reply)");
+     const QVariantMap &data = qdbus_cast<QVariantMap>(msg.arguments().at(0).value<QDBusArgument>());
+ 
+     const KWin::DBusDesktopDataVector &desktops = qdbus_cast<KWin::DBusDesktopDataVector>(
+@@ -539,11 +650,15 @@ void DesktopsModel::getAllAndConnect(const QDBusMessage &msg)
+ 
+ void DesktopsModel::desktopCreated(const QString &id, const KWin::DBusDesktopDataStruct &data)
+ {
++    VDBUG_ENTER("desktopCreated (D-Bus signal IN)");
++    VDBUG_NOTE("incoming: id=" << id << " data.id=" << data.id
++               << " data.position=" << data.position << " data.name=\"" << data.name << "\"");
+     m_serverSideDesktops.insert(data.position, id);
+     m_serverSideNames[data.id] = data.name;
+ 
+     // If the user didn't make any changes, we can just stay in sync.
+     if (!m_userModified) {
++        VDBUG_NOTE("branch: NOT user-modified -> mirror server state into local");
+         beginInsertRows(QModelIndex(), data.position, data.position);
+ 
+         m_desktops = m_serverSideDesktops;
+@@ -553,6 +668,13 @@ void DesktopsModel::desktopCreated(const QString &id, const KWin::DBusDesktopDat
+     } else {
+         // Remove dummy data.
+         const QString dummyId = m_desktops.at(data.position);
++        const QString localNameForDummy = m_names.value(dummyId);
++        VDBUG_NOTE("branch: USER-modified -> replace dummy at position" << data.position);
++        VDBUG_NOTE("  dummy id=" << dummyId << " had local name=\"" << localNameForDummy << "\"");
++        VDBUG_NOTE("  about to OVERWRITE m_names[" << vdbg_fmtId(id) << "] with data.name=\""
++                   << data.name << "\""
++                   << ((localNameForDummy != data.name && !localNameForDummy.isEmpty())
++                       ? QStringLiteral(" *** local name LOST ***") : QStringLiteral("")));
+         m_desktops[data.position] = id;
+         m_names.remove(dummyId);
+         m_names[id] = data.name;
+@@ -565,6 +687,8 @@ void DesktopsModel::desktopCreated(const QString &id, const KWin::DBusDesktopDat
+ 
+ void DesktopsModel::desktopRemoved(const QString &id)
+ {
++    VDBUG_ENTER("desktopRemoved (D-Bus signal IN)");
++    VDBUG_NOTE("incoming: id=" << id);
+     const int desktopIndex = m_serverSideDesktops.indexOf(id);
+ 
+     m_serverSideDesktops.removeAt(desktopIndex);
+@@ -585,6 +709,8 @@ void DesktopsModel::desktopRemoved(const QString &id)
+ 
+ void DesktopsModel::desktopDataChanged(const QString &id, const KWin::DBusDesktopDataStruct &data)
+ {
++    VDBUG_ENTER("desktopDataChanged (D-Bus signal IN)");
++    VDBUG_NOTE("incoming: id=" << id << " data.position=" << data.position << " data.name=\"" << data.name << "\"");
+     const int desktopIndex = m_serverSideDesktops.indexOf(id);
+ 
+     m_serverSideDesktops[desktopIndex] = id;
+@@ -605,8 +731,11 @@ void DesktopsModel::desktopDataChanged(const QString &id, const KWin::DBusDeskto
+ 
+ void DesktopsModel::desktopRowsChanged(uint rows)
+ {
++    VDBUG_ENTER("desktopRowsChanged (D-Bus signal IN)");
++    VDBUG_NOTE("incoming: rows=" << rows << " current m_serverSideRows=" << m_serverSideRows);
+     // Unfortunately we sometimes get this signal from the server with an unchanged value.
+     if ((int)rows == m_serverSideRows) {
++        VDBUG_NOTE("ignored: server already had this row count");
+         return;
+     }
+ 
+@@ -625,6 +754,8 @@ void DesktopsModel::desktopRowsChanged(uint rows)
+ 
+ void DesktopsModel::updateModifiedState(bool server)
+ {
++    VDBUG_ENTER("updateModifiedState");
++    VDBUG_NOTE("server arg=" << server << " (true means triggered by server-side change)");
+     // Count is the same but contents are not: The user may have
+     // removed and created new desktops in the UI, but there were
+     // no changes to send to the server because number and names
+@@ -632,13 +763,32 @@ void DesktopsModel::updateModifiedState(bool server)
+     // that up here.
+     if (m_desktops.count() == m_serverSideDesktops.count()
+         && m_desktops != m_serverSideDesktops) {
++        VDBUG_NOTE("entering count-equal/lists-differ id-fixup loop");
++        VDBUG_NOTE("  before fixup:");
++        VDBUG_NOTE("    m_desktops          =" << vdbg_fmtList(m_desktops));
++        VDBUG_NOTE("    m_serverSideDesktops=" << vdbg_fmtList(m_serverSideDesktops));
++        VDBUG_NOTE("    m_names             =" << vdbg_fmtHash(m_names));
+ 
+         for (int i = 0; i < m_serverSideDesktops.count(); ++i) {
+             const QString oldId = m_desktops.at(i);
+             const QString &newId = m_serverSideDesktops.at(i);
++            const bool willOverwrite = m_names.contains(newId) && oldId != newId;
++            VDBUG_NOTE("  fixup[" << i << "]: oldId=" << vdbg_fmtId(oldId)
++                                   << " newId=" << vdbg_fmtId(newId)
++                                   << " m_names[oldId]=\"" << m_names.value(oldId) << "\""
++                                   << " m_names.contains(newId)=" << m_names.contains(newId)
++                                   << (oldId == newId
++                                        ? QStringLiteral(" (NO-OP)")
++                                        : willOverwrite
++                                            ? QStringLiteral(" *** OVERWRITES newId's existing value \"")
++                                                + m_names.value(newId) + QStringLiteral("\" ***")
++                                            : QStringLiteral(" (renaming key)")));
+             m_desktops[i] = newId;
+             m_names[newId] = m_names.take(oldId);
+         }
++        VDBUG_NOTE("  after fixup:");
++        VDBUG_NOTE("    m_desktops          =" << vdbg_fmtList(m_desktops));
++        VDBUG_NOTE("    m_names             =" << vdbg_fmtHash(m_names));
+ 
+         Q_EMIT dataChanged(index(0, 0), index(rowCount() - 1, 0), QList<int>{Qt::DisplayRole});
+     }
+@@ -646,6 +796,7 @@ void DesktopsModel::updateModifiedState(bool server)
+     if (m_desktops == m_serverSideDesktops
+         && m_names == m_serverSideNames
+         && m_rows == m_serverSideRows) {
++        VDBUG_NOTE("decision: fully synced -> userModified=false, serverModified=false");
+ 
+         m_userModified = false;
+         Q_EMIT userModifiedChanged();
+@@ -654,14 +805,17 @@ void DesktopsModel::updateModifiedState(bool server)
+         Q_EMIT serverModifiedChanged();
+     } else {
+         if (m_pendingCalls > 0) {
++            VDBUG_NOTE("decision: not synced, pendingCalls=" << m_pendingCalls << " > 0 -> recurse via syncWithServer()");
+             m_serverModified = false;
+             Q_EMIT serverModifiedChanged();
+ 
+             syncWithServer();
+         } else if (server) {
++            VDBUG_NOTE("decision: not synced, server-triggered, no pending -> serverModified=true (banner)");
+             m_serverModified = true;
+             Q_EMIT serverModifiedChanged();
+         } else {
++            VDBUG_NOTE("decision: not synced, user-triggered -> userModified=true");
+             m_userModified = true;
+             Q_EMIT userModifiedChanged();
+         }
+diff --git a/src/kcms/desktop/ui/main.qml b/src/kcms/desktop/ui/main.qml
+index 0c4c5b5..4a04226 100644
+--- a/src/kcms/desktop/ui/main.qml
++++ b/src/kcms/desktop/ui/main.qml
+@@ -32,7 +32,10 @@ KCM.ScrollViewKCM {
+                     to: 20
+                     editable: true
+                     value: kcm.desktopsModel.rows
+-                    onValueModified: kcm.desktopsModel.rows = value
++                    onValueModified: {
++                        console.warn("[VDBUG] QML rowsSpinBox.onValueModified value=" + value);
++                        kcm.desktopsModel.rows = value;
++                    }
+ 
+                     KCM.SettingHighlighter {
+                         highlight: kcm.desktopsModel.rows !== 2
+@@ -54,7 +57,10 @@ KCM.ScrollViewKCM {
+             text: i18nc("@action:button", "Add Desktop")
+             icon.name: "list-add"
+             displayHint: Kirigami.DisplayHint.KeepVisible
+-            onTriggered: kcm.desktopsModel.createDesktop()
++            onTriggered: {
++                console.warn("[VDBUG] QML Add Desktop action triggered");
++                kcm.desktopsModel.createDesktop();
++            }
+         }
+     ]
+ 
+@@ -89,6 +95,7 @@ KCM.ScrollViewKCM {
+                             enabled: !renameLayout.visible
+                             text: i18nc("@action:button", "Rename")
+                             onTriggered: {
++                                console.warn("[VDBUG] QML renameAction triggered  model=" + renameLayout._vdbgModel(model));
+                                 renameLayout.visible = true;
+                                 renameField.forceActiveFocus();
+                             }
+@@ -99,6 +106,7 @@ KCM.ScrollViewKCM {
+                             icon.name: "edit-delete-remove-symbolic"
+                             text: i18nc("@info:tooltip", "Remove")
+                             onTriggered: {
++                                console.warn("[VDBUG] QML removeAction triggered  model=" + renameLayout._vdbgModel(model));
+                                 kcm.desktopsModel.removeDesktop(model.Id);
+                             }
+                         }
+@@ -106,9 +114,24 @@ KCM.ScrollViewKCM {
+                 }
+                 RowLayout {
+                     id: renameLayout
++
++                    function _vdbgModel(m) {
++                        if (!m) return "<no-model>";
++                        // Print every known role plus a JSON dump for safety.
++                        return "{ index=" + (typeof index !== "undefined" ? index : "?")
++                             + " Id=<" + m.Id + ">|len=" + (m.Id ? m.Id.length : -1)
++                             + " display=\"" + m.display + "\""
++                             + " DesktopRow=" + m.DesktopRow
++                             + " IsDefault=" + m.IsDefault
++                             + " }";
++                    }
++
+                     QQC2.TextField {
+                         id: renameField
+-                        onEditingFinished: acceptEditButton.clicked()
++                        onEditingFinished: {
++                            console.warn("[VDBUG] QML renameField.editingFinished -> acceptEditButton.clicked()  model=" + renameLayout._vdbgModel(model) + " text=\"" + text + "\"");
++                            acceptEditButton.clicked();
++                        }
+                         Keys.onEscapePressed: discardEditButton.clicked()
+                         Keys.onUpPressed: () => { /* don't move to previous delegate */ }
+                         Keys.onDownPressed: () => { /* don't move to next delegate */ }
+@@ -118,6 +141,7 @@ KCM.ScrollViewKCM {
+                         icon.name: "dialog-ok-apply"
+                         text: i18nc("@info:tooltip", "Apply new name")
+                         onClicked: {
++                            console.warn("[VDBUG] QML acceptEditButton.onClicked -> Qt.callLater(setDesktopName, <" + (model ? model.Id : "<no-model>") + ">, \"" + renameField.text + "\")");
+                             Qt.callLater(kcm.desktopsModel.setDesktopName, model.Id, renameField.text);
+                             renameLayout.visible = false;
+                         }
+@@ -131,6 +155,7 @@ KCM.ScrollViewKCM {
+                         icon.name: "dialog-cancel-symbolic"
+                         text: i18nc("@info:tooltip", "Cancel rename")
+                         onClicked: {
++                            console.warn("[VDBUG] QML discardEditButton.onClicked  model=" + renameLayout._vdbgModel(model));
+                             renameLayout.visible = false;
+                         }
+                         QQC2.ToolTip.text: text
+@@ -140,6 +165,7 @@ KCM.ScrollViewKCM {
+                     }
+ 
+                     onVisibleChanged: {
++                        console.warn("[VDBUG] QML renameLayout.visibleChanged visible=" + visible + " model=" + renameLayout._vdbgModel(model));
+                         if (visible) {
+                             renameField.text = model ? model.display : "";
+                             renameField.selectAll();
+diff --git a/src/kcms/desktop/virtualdesktops.cpp b/src/kcms/desktop/virtualdesktops.cpp
+index e1d24b8..225f324 100644
+--- a/src/kcms/desktop/virtualdesktops.cpp
++++ b/src/kcms/desktop/virtualdesktops.cpp
+@@ -18,6 +18,7 @@
+ #include <KPluginFactory>
+ #include <QDBusConnection>
+ #include <QDBusMessage>
++#include <QDebug>
+ 
+ K_PLUGIN_FACTORY_WITH_JSON(VirtualDesktopsFactory,
+                            "kcm_kwin_virtualdesktops.json",
+@@ -64,6 +65,7 @@ VirtualDesktopsSettings *VirtualDesktops::virtualDesktopsSettings() const
+ 
+ void VirtualDesktops::load()
+ {
++    qWarning().noquote() << "[VDBUG] ==== VirtualDesktops::load() (KCM) ====";
+     KQuickManagedConfigModule::load();
+ 
+     m_data->desktopsModel()->load();
+@@ -72,6 +74,7 @@ void VirtualDesktops::load()
+ 
+ void VirtualDesktops::save()
+ {
++    qWarning().noquote() << "[VDBUG] ==== VirtualDesktops::save() (KCM Apply clicked) ====";
+     KQuickManagedConfigModule::save();
+ 
+     m_data->desktopsModel()->syncWithServer();
+@@ -80,10 +83,12 @@ void VirtualDesktops::save()
+     QDBusMessage message = QDBusMessage::createSignal(QStringLiteral("/KWin"),
+                                                       QStringLiteral("org.kde.KWin"), QStringLiteral("reloadConfig"));
+     QDBusConnection::sessionBus().send(message);
++    qWarning().noquote() << "[VDBUG] ==== VirtualDesktops::save() returning ====";
+ }
+ 
+ void VirtualDesktops::defaults()
+ {
++    qWarning().noquote() << "[VDBUG] ==== VirtualDesktops::defaults() (Defaults clicked) ====";
+     KQuickManagedConfigModule::defaults();
+ 
+     m_data->desktopsModel()->defaults();
