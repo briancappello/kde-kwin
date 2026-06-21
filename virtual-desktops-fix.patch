@@ -1,8 +1,6 @@
-diff --git a/src/virtualdesktops.cpp b/src/virtualdesktops.cpp
-index 38dc20c..2467730 100644
---- a/src/virtualdesktops.cpp
-+++ b/src/virtualdesktops.cpp
-@@ -22,6 +22,7 @@
+--- a/src/virtualdesktops.cpp	2026-06-20 19:46:10.111911588 -0600
++++ b/src/virtualdesktops.cpp	2026-06-20 19:46:52.878514887 -0600
+@@ -27,6 +27,7 @@
  // Qt
  #include <QAction>
  #include <QDebug>
@@ -10,7 +8,7 @@ index 38dc20c..2467730 100644
  #include <QUuid>
  
  #include <algorithm>
-@@ -716,6 +717,23 @@ void VirtualDesktopManager::updateLayout()
+@@ -682,6 +683,23 @@
      Q_EMIT rowsChanged(m_rows);
  }
  
@@ -34,7 +32,7 @@ index 38dc20c..2467730 100644
  void VirtualDesktopManager::load()
  {
      s_loadingDesktopSettings = true;
-@@ -727,6 +745,9 @@ void VirtualDesktopManager::load()
+@@ -693,26 +711,62 @@
      const int n = group.readEntry("Number", 1);
      setCount(n);
  
@@ -43,9 +41,6 @@ index 38dc20c..2467730 100644
 +    rawIds.reserve(n);
      for (int i = 1; i <= n; i++) {
          QString s = group.readEntry(QStringLiteral("Name_%1").arg(i), i18n("Desktop %1", i));
- #if KWIN_BUILD_X11
-@@ -738,22 +759,55 @@ void VirtualDesktopManager::load()
- #endif
          m_desktops[i - 1]->setName(s);
  
 -        const QString sId = group.readEntry(QStringLiteral("Id_%1").arg(i), QString());

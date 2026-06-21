@@ -1,0 +1,12 @@
+# makepkg build artifacts
+/src/
+/pkg/
+*.pkg.tar.*
+*.tar.xz
+*.tar.xz.sig
+*.tar.gz
+*.tar.zst
+
+# upstream cherry-pick patches fetched by makepkg from source=() URLs
+# (hash-named; re-downloaded each build — not authored here)
+cf00d9712316edecb4e1014bffe925136a74f072.patch

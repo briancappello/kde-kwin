@@ -43,7 +43,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
-KWIN_VERSION="6.6.4"
+KWIN_VERSION="6.7.0"
 UPSTREAM_TAG="v${KWIN_VERSION}"
 UPSTREAM_REPO="https://invent.kde.org/plasma/kwin"
 UPSTREAM_CLONE="$BUILD_DIR/kwin-src"
@@ -74,6 +74,7 @@ BUILD_DEPS=(
     libxkbcommon mesa milou libplasma plasma-activities
     qt6-5compat qt6-base qt6-declarative qt6-svg qt6-tools
     systemd-libs wayland xcb-util-keysyms xcb-util-wm
+    vulkan-headers vulkan-icd-loader
 )
 
 echo "==> Checking build dependencies..."

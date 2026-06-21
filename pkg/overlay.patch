@@ -1,0 +1,41 @@
+--- a/PKGBUILD	2026-06-20 19:33:50.753790849 -0600
++++ b/PKGBUILD	2026-06-20 19:35:27.237128492 -0600
+@@ -1,6 +1,11 @@
+ # Maintainer: Felix Yan <felixonmars@archlinux.org>
+ # Maintainer: Antonio Rojas <arojas@archlinux.org>
+ # Contributor: Andrea Scarpino <andrea@archlinux.org>
++#
++# LOCAL OVERLAY (kde-kwin repo): this is the upstream Arch PKGBUILD with our
++# patches appended to source=() and applied in prepare().  Keep PKGBUILD.upstream
++# in sync with the official recipe; update.sh regenerates this file by replaying
++# overlay.patch and fails loudly if the official recipe drifts.
+ 
+ pkgname=kwin
+ pkgver=6.7.0
+@@ -83,7 +88,12 @@
+ optdepends=('plasma-keyboard: virtual keyboard')
+ groups=(plasma)
+ source=(https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{,.sig}
+-        https://invent.kde.org/plasma/kwin/-/commit/cf00d9712316edecb4e1014bffe925136a74f072.patch)
++        https://invent.kde.org/plasma/kwin/-/commit/cf00d9712316edecb4e1014bffe925136a74f072.patch
++        # --- local overlay patches (kde-kwin repo) ---
++        swap-gesture-fingers.patch
++        screen-edge-corners.patch
++        virtual-desktops-debug.patch
++        virtual-desktops-fix.patch)
+ sha256sums=('d20b798094a9f58e57de55eca3d58b1cdcb7db2939eb8bf73918c4fab6d9aec5'
+             'SKIP'
+             'cb57c6364bc887ef36a059c2f51ef3e3a23f89a1b62f0f58884aeb1ebdea7f36')
+@@ -98,6 +108,12 @@
+   # https://bugs.kde.org/show_bug.cgi?id=520842#c17
+   # Disable Color Pipeline for NVIDIA
+   patch -Np1 -i ../cf00d9712316edecb4e1014bffe925136a74f072.patch
++
++  # --- local overlay patches (kde-kwin repo); -F0 = no fuzz, fail loudly on drift ---
++  patch -Np1 -F0 -i ../swap-gesture-fingers.patch
++  patch -Np1 -F0 -i ../screen-edge-corners.patch
++  patch -Np1 -F0 -i ../virtual-desktops-debug.patch
++  patch -Np1 -F0 -i ../virtual-desktops-fix.patch
+ }
+ 
+ build() {

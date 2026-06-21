@@ -1,5 +1,5 @@
 diff --git a/src/kcms/desktop/desktopsmodel.cpp b/src/kcms/desktop/desktopsmodel.cpp
-index eea367b..24c6e34 100644
+index 76d921d..c5bfede 100644
 --- a/src/kcms/desktop/desktopsmodel.cpp
 +++ b/src/kcms/desktop/desktopsmodel.cpp
 @@ -24,6 +24,67 @@
@@ -70,7 +70,7 @@ index eea367b..24c6e34 100644
  namespace KWin
  {
  
-@@ -165,6 +226,8 @@ int DesktopsModel::rows() const
+@@ -162,6 +223,8 @@ int DesktopsModel::rows() const
  
  void DesktopsModel::setRows(int rows)
  {
@@ -79,7 +79,7 @@ index eea367b..24c6e34 100644
      if (!ready()) {
          return;
      }
-@@ -197,6 +260,7 @@ QString DesktopsModel::createDesktopName() const
+@@ -194,6 +257,7 @@ QString DesktopsModel::createDesktopName() const
  
  void DesktopsModel::createDesktop()
  {
@@ -87,7 +87,7 @@ index eea367b..24c6e34 100644
      if (!ready()) {
          return;
      }
-@@ -207,6 +271,7 @@ void DesktopsModel::createDesktop()
+@@ -204,6 +268,7 @@ void DesktopsModel::createDesktop()
  
      m_desktops.append(dummyId);
      m_names[dummyId] = createDesktopName();
@@ -95,7 +95,7 @@ index eea367b..24c6e34 100644
  
      endInsertRows();
      Q_EMIT desktopCountChanged();
-@@ -216,6 +281,8 @@ void DesktopsModel::createDesktop()
+@@ -213,6 +278,8 @@ void DesktopsModel::createDesktop()
  
  void DesktopsModel::removeDesktop(const QString &id)
  {
@@ -104,7 +104,7 @@ index eea367b..24c6e34 100644
      if (!ready() || !m_desktops.contains(id)) {
          return;
      }
-@@ -235,7 +302,10 @@ void DesktopsModel::removeDesktop(const QString &id)
+@@ -232,7 +299,10 @@ void DesktopsModel::removeDesktop(const QString &id)
  
  void DesktopsModel::setDesktopName(const QString &id, const QString &name)
  {
@@ -115,7 +115,7 @@ index eea367b..24c6e34 100644
          return;
      }
  
-@@ -250,11 +320,15 @@ void DesktopsModel::setDesktopName(const QString &id, const QString &name)
+@@ -247,11 +317,15 @@ void DesktopsModel::setDesktopName(const QString &id, const QString &name)
  
  void DesktopsModel::syncWithServer()
  {
@@ -131,7 +131,7 @@ index eea367b..24c6e34 100644
          }
  
          --m_pendingCalls;
-@@ -263,6 +337,7 @@ void DesktopsModel::syncWithServer()
+@@ -260,6 +334,7 @@ void DesktopsModel::syncWithServer()
      };
  
      if (m_desktops.count() > m_serverSideDesktops.count()) {
@@ -139,7 +139,7 @@ index eea367b..24c6e34 100644
          auto call = QDBusMessage::createMethodCall(
              s_serviceName,
              s_virtDesktopsPath,
-@@ -271,6 +346,9 @@ void DesktopsModel::syncWithServer()
+@@ -268,6 +343,9 @@ void DesktopsModel::syncWithServer()
  
          const int newIndex = m_serverSideDesktops.count();
  
@@ -149,7 +149,7 @@ index eea367b..24c6e34 100644
          call.setArguments({(uint)newIndex, m_names.value(m_desktops.at(newIndex))});
  
          ++m_pendingCalls;
-@@ -284,6 +362,7 @@ void DesktopsModel::syncWithServer()
+@@ -281,6 +359,7 @@ void DesktopsModel::syncWithServer()
      }
  
      if (m_desktops.count() < m_serverSideDesktops.count()) {
@@ -157,7 +157,7 @@ index eea367b..24c6e34 100644
          QStringListIterator i(m_serverSideDesktops);
  
          i.toBack();
-@@ -292,6 +371,7 @@ void DesktopsModel::syncWithServer()
+@@ -289,6 +368,7 @@ void DesktopsModel::syncWithServer()
              const QString &previous = i.previous();
  
              if (!m_desktops.contains(previous)) {
@@ -165,7 +165,7 @@ index eea367b..24c6e34 100644
                  auto call = QDBusMessage::createMethodCall(
                      s_serviceName,
                      s_virtDesktopsPath,
-@@ -313,23 +393,47 @@ void DesktopsModel::syncWithServer()
+@@ -310,23 +390,47 @@ void DesktopsModel::syncWithServer()
      }
  
      // Sync ids. Replace dummy ids in the process.
@@ -213,7 +213,7 @@ index eea367b..24c6e34 100644
                  auto call = QDBusMessage::createMethodCall(
                      s_serviceName,
                      s_virtDesktopsPath,
-@@ -354,6 +458,7 @@ void DesktopsModel::syncWithServer()
+@@ -351,6 +455,7 @@ void DesktopsModel::syncWithServer()
  
      // Sync rows.
      if (m_rows != m_serverSideRows) {
@@ -221,7 +221,7 @@ index eea367b..24c6e34 100644
          auto call = QDBusMessage::createMethodCall(
              s_serviceName,
              s_virtDesktopsPath,
-@@ -368,11 +473,14 @@ void DesktopsModel::syncWithServer()
+@@ -365,11 +470,14 @@ void DesktopsModel::syncWithServer()
  
          const QDBusPendingCallWatcher *watcher = new QDBusPendingCallWatcher(pending, this);
          QObject::connect(watcher, &QDBusPendingCallWatcher::finished, this, callFinished);
@@ -236,7 +236,7 @@ index eea367b..24c6e34 100644
      auto getAllAndConnectCall = QDBusMessage::createMethodCall(
          s_serviceName,
          s_virtDesktopsPath,
-@@ -400,6 +508,7 @@ bool DesktopsModel::isDefaults() const
+@@ -397,6 +505,7 @@ bool DesktopsModel::isDefaults() const
  
  void DesktopsModel::defaults()
  {
@@ -244,7 +244,7 @@ index eea367b..24c6e34 100644
      beginResetModel();
      // default is 1 desktop with 2 rows
      // see kwin/virtualdesktops.cpp  VirtualDesktopGrid::VirtualDesktopGrid
-@@ -417,6 +526,7 @@ void DesktopsModel::defaults()
+@@ -414,6 +523,7 @@ void DesktopsModel::defaults()
  
  void DesktopsModel::load()
  {
@@ -252,7 +252,7 @@ index eea367b..24c6e34 100644
      beginResetModel();
      m_desktops = m_serverSideDesktops;
      m_names = m_serverSideNames;
-@@ -429,6 +539,7 @@ void DesktopsModel::load()
+@@ -426,6 +536,7 @@ void DesktopsModel::load()
  
  void DesktopsModel::getAllAndConnect(const QDBusMessage &msg)
  {
@@ -260,7 +260,7 @@ index eea367b..24c6e34 100644
      const QVariantMap &data = qdbus_cast<QVariantMap>(msg.arguments().at(0).value<QDBusArgument>());
  
      const KWin::DBusDesktopDataVector &desktops = qdbus_cast<KWin::DBusDesktopDataVector>(
-@@ -539,11 +650,15 @@ void DesktopsModel::getAllAndConnect(const QDBusMessage &msg)
+@@ -536,11 +647,15 @@ void DesktopsModel::getAllAndConnect(const QDBusMessage &msg)
  
  void DesktopsModel::desktopCreated(const QString &id, const KWin::DBusDesktopDataStruct &data)
  {
@@ -276,7 +276,7 @@ index eea367b..24c6e34 100644
          beginInsertRows(QModelIndex(), data.position, data.position);
  
          m_desktops = m_serverSideDesktops;
-@@ -553,6 +668,13 @@ void DesktopsModel::desktopCreated(const QString &id, const KWin::DBusDesktopDat
+@@ -550,6 +665,13 @@ void DesktopsModel::desktopCreated(const QString &id, const KWin::DBusDesktopDat
      } else {
          // Remove dummy data.
          const QString dummyId = m_desktops.at(data.position);
@@ -290,7 +290,7 @@ index eea367b..24c6e34 100644
          m_desktops[data.position] = id;
          m_names.remove(dummyId);
          m_names[id] = data.name;
-@@ -565,6 +687,8 @@ void DesktopsModel::desktopCreated(const QString &id, const KWin::DBusDesktopDat
+@@ -562,6 +684,8 @@ void DesktopsModel::desktopCreated(const QString &id, const KWin::DBusDesktopDat
  
  void DesktopsModel::desktopRemoved(const QString &id)
  {
@@ -299,7 +299,7 @@ index eea367b..24c6e34 100644
      const int desktopIndex = m_serverSideDesktops.indexOf(id);
  
      m_serverSideDesktops.removeAt(desktopIndex);
-@@ -585,6 +709,8 @@ void DesktopsModel::desktopRemoved(const QString &id)
+@@ -582,6 +706,8 @@ void DesktopsModel::desktopRemoved(const QString &id)
  
  void DesktopsModel::desktopDataChanged(const QString &id, const KWin::DBusDesktopDataStruct &data)
  {
@@ -308,7 +308,7 @@ index eea367b..24c6e34 100644
      const int desktopIndex = m_serverSideDesktops.indexOf(id);
  
      m_serverSideDesktops[desktopIndex] = id;
-@@ -605,8 +731,11 @@ void DesktopsModel::desktopDataChanged(const QString &id, const KWin::DBusDeskto
+@@ -602,8 +728,11 @@ void DesktopsModel::desktopDataChanged(const QString &id, const KWin::DBusDeskto
  
  void DesktopsModel::desktopRowsChanged(uint rows)
  {
@@ -320,7 +320,7 @@ index eea367b..24c6e34 100644
          return;
      }
  
-@@ -625,6 +754,8 @@ void DesktopsModel::desktopRowsChanged(uint rows)
+@@ -622,6 +751,8 @@ void DesktopsModel::desktopRowsChanged(uint rows)
  
  void DesktopsModel::updateModifiedState(bool server)
  {
@@ -329,7 +329,7 @@ index eea367b..24c6e34 100644
      // Count is the same but contents are not: The user may have
      // removed and created new desktops in the UI, but there were
      // no changes to send to the server because number and names
-@@ -632,13 +763,32 @@ void DesktopsModel::updateModifiedState(bool server)
+@@ -629,12 +760,31 @@ void DesktopsModel::updateModifiedState(bool server)
      // that up here.
      if (m_desktops.count() == m_serverSideDesktops.count()
          && m_desktops != m_serverSideDesktops) {
@@ -338,7 +338,6 @@ index eea367b..24c6e34 100644
 +        VDBUG_NOTE("    m_desktops          =" << vdbg_fmtList(m_desktops));
 +        VDBUG_NOTE("    m_serverSideDesktops=" << vdbg_fmtList(m_serverSideDesktops));
 +        VDBUG_NOTE("    m_names             =" << vdbg_fmtHash(m_names));
- 
          for (int i = 0; i < m_serverSideDesktops.count(); ++i) {
              const QString oldId = m_desktops.at(i);
              const QString &newId = m_serverSideDesktops.at(i);
@@ -362,15 +361,15 @@ index eea367b..24c6e34 100644
  
          Q_EMIT dataChanged(index(0, 0), index(rowCount() - 1, 0), QList<int>{Qt::DisplayRole});
      }
-@@ -646,6 +796,7 @@ void DesktopsModel::updateModifiedState(bool server)
+@@ -642,6 +792,7 @@ void DesktopsModel::updateModifiedState(bool server)
      if (m_desktops == m_serverSideDesktops
          && m_names == m_serverSideNames
          && m_rows == m_serverSideRows) {
 +        VDBUG_NOTE("decision: fully synced -> userModified=false, serverModified=false");
- 
          m_userModified = false;
          Q_EMIT userModifiedChanged();
-@@ -654,14 +805,17 @@ void DesktopsModel::updateModifiedState(bool server)
+ 
+@@ -649,14 +800,17 @@ void DesktopsModel::updateModifiedState(bool server)
          Q_EMIT serverModifiedChanged();
      } else {
          if (m_pendingCalls > 0) {
@@ -389,7 +388,7 @@ index eea367b..24c6e34 100644
              Q_EMIT userModifiedChanged();
          }
 diff --git a/src/kcms/desktop/ui/main.qml b/src/kcms/desktop/ui/main.qml
-index 0c4c5b5..4a04226 100644
+index 834eadc..2032fc0 100644
 --- a/src/kcms/desktop/ui/main.qml
 +++ b/src/kcms/desktop/ui/main.qml
 @@ -32,7 +32,10 @@ KCM.ScrollViewKCM {
@@ -483,7 +482,7 @@ index 0c4c5b5..4a04226 100644
                              renameField.text = model ? model.display : "";
                              renameField.selectAll();
 diff --git a/src/kcms/desktop/virtualdesktops.cpp b/src/kcms/desktop/virtualdesktops.cpp
-index e1d24b8..225f324 100644
+index 410cb1a..88d856b 100644
 --- a/src/kcms/desktop/virtualdesktops.cpp
 +++ b/src/kcms/desktop/virtualdesktops.cpp
 @@ -18,6 +18,7 @@
