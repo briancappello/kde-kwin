@@ -30,12 +30,15 @@ UPSTREAM_RAW='https://gitlab.archlinux.org/archlinux/packaging/packages/kwin/-/r
 
 BUILD_ONLY=0
 NO_INSTALL=0
-case "${1:-}" in
-  --build-only) BUILD_ONLY=1 ;;
-  --no-install) NO_INSTALL=1 ;;
-  '') ;;
-  *) echo "unknown arg: $1" >&2; exit 2 ;;
-esac
+FORCE=0
+for a in "$@"; do
+  case "$a" in
+    --build-only) BUILD_ONLY=1 ;;
+    --no-install) NO_INSTALL=1 ;;
+    --force) FORCE=1 ;;
+    *) echo "unknown arg: $a" >&2; exit 2 ;;
+  esac
+done
 
 die() { echo "!! $*" >&2; exit 1; }
 note() { echo "==> $*"; }
@@ -47,6 +50,15 @@ note "Fetching latest upstream kwin PKGBUILD..."
 curl -fsSL "$UPSTREAM_RAW" -o "$tmp/PKGBUILD.upstream.new" \
   || die "could not fetch upstream PKGBUILD from $UPSTREAM_RAW"
 
+# --- 1b. skip early if already at the latest upstream version -------------
+newver="$(. "$tmp/PKGBUILD.upstream.new"; echo "$pkgver-$pkgrel")"
+installed="$(pacman -Q "$PKG" 2>/dev/null | awk '{print $2}' || true)"
+if [[ "$installed" == "$newver" && "$FORCE" != 1 ]]; then
+  note "$PKG already at $newver (patched) — nothing to do. (--force to rebuild)"
+  exit 0
+fi
+note "Update: ${installed:-none} -> $newver"
+
 # --- 2. replay overlay; loud-fail on packaging drift ----------------------
 cp "$tmp/PKGBUILD.upstream.new" "$tmp/PKGBUILD"
 if ! patch -p1 -d "$tmp" --no-backup-if-mismatch <overlay.patch >/dev/null 2>&1; then
@@ -57,9 +69,6 @@ if ! patch -p1 -d "$tmp" --no-backup-if-mismatch <overlay.patch >/dev/null 2>&1;
   diff -u PKGBUILD.upstream "$tmp/PKGBUILD.upstream.new" >&2 || true
   die "packaging drift — see diff above; update PKGBUILD + PKGBUILD.upstream + overlay.patch"
 fi
-
-newver="$(. "$tmp/PKGBUILD"; echo "$pkgver-$pkgrel")"
-note "Upstream target: kwin $newver"
 
 # adopt the refreshed files (only after the overlay applied cleanly)
 cp "$tmp/PKGBUILD.upstream.new" PKGBUILD.upstream
