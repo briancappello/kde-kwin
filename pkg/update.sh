@@ -8,7 +8,11 @@
 #   2. Replay our overlay.patch onto it. If it does NOT apply, upstream changed
 #      their packaging (new dep, restructured prepare/source) -> STOP and show
 #      the diff so you can re-overlay. This is the "loud" gate for packaging drift.
-#   3. updpkgsums  (regenerates checksums incl. the new tarball + our patches).
+#      The overlay is version-agnostic: it never edits pkgver or the tarball
+#      sha256 line, so routine point releases no longer trip this gate.
+#   3. Refresh ONLY the upstream tarball checksum in the primary sha256sums
+#      array (our overlay patch checksums live in a separate `sha256sums+=(...)`
+#      that must be preserved — `updpkgsums` would clobber it, so we don't use it).
 #   4. makepkg     (prepare() applies our patches with -F0 = no fuzz; a patch that
 #                   no longer applies aborts the build loudly -> rebase it).
 #   5. Publish to the arches-local repo and install (needs sudo).
@@ -75,8 +79,24 @@ cp "$tmp/PKGBUILD.upstream.new" PKGBUILD.upstream
 cp "$tmp/PKGBUILD" PKGBUILD
 
 # --- 3. refresh checksums -------------------------------------------------
-note "Refreshing checksums (updpkgsums)..."
-updpkgsums
+# The overlay keeps two sha256sums arrays: the upstream primary array
+# (tarball + 'SKIP' for the sig) and our appended `sha256sums+=(...)` for the
+# local overlay patches. We deliberately DO NOT run `updpkgsums` here: it
+# collapses both arrays into one and drops the `+=` line. Instead we refresh
+# ONLY the tarball checksum in the primary array, leaving the sig 'SKIP' and
+# our patch checksums untouched. This is what keeps the overlay version-agnostic.
+note "Refreshing upstream tarball checksum (targeted; preserves split array)..."
+_tarurl="$(. ./PKGBUILD; echo "${source[0]%%::*}")"
+_tarfile="$(. ./PKGBUILD; echo "$pkgname-$pkgver.tar.xz")"
+curl -fsSL "$_tarurl" -o "$tmp/$_tarfile" \
+  || die "could not download source tarball for checksumming: $_tarurl"
+_tarsum="$(sha256sum "$tmp/$_tarfile" | awk '{print $1}')"
+[[ -n "$_tarsum" ]] || die "failed to compute tarball sha256"
+# Replace only the first sha256sums entry (the tarball) in the primary array.
+sed -i -E "0,/^sha256sums=\('[0-9a-fA-F]{64}'/s//sha256sums=('$_tarsum'/" PKGBUILD
+# Sanity: the primary array must now start with our freshly computed sum.
+grep -q "sha256sums=('$_tarsum'" PKGBUILD \
+  || die "failed to update tarball checksum in PKGBUILD (array format changed?)"
 
 # --- 3b. verify KDE signing keys are present (loud) -----------------------
 note "Checking KDE signing keys are in the gpg keyring..."
@@ -93,7 +113,10 @@ fi
 
 # --- 4. build (patches applied in prepare with -F0) -----------------------
 note "Building package (makepkg)..."
-makepkg -f
+# -C/--cleanbuild wipes $srcdir first: without it a stale build/CMakeCache.txt
+# from the previous version aborts the build ("source does not match ... used to
+# generate cache"), and old kwin-<oldver>/ trees pile up in src/.
+makepkg -Cf
 
 pkgfile="$(ls -t ${PKG}-*-x86_64.pkg.tar.zst | head -1)"
 [[ -f "$pkgfile" ]] || die "build reported success but no package file found"
