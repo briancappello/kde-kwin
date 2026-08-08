@@ -57,9 +57,9 @@ if [[ "${1:-}" == "--clean" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 1. Install build dependencies (Arch Linux / pacman)
+# 1. Install build dependencies (Arch Linux / pacman or Fedora / dnf)
 # ---------------------------------------------------------------------------
-BUILD_DEPS=(
+ARCH_DEPS=(
     cmake extra-cmake-modules gcc
     kdoctools krunner
     plasma-wayland-protocols python wayland-protocols xorg-xwayland
@@ -77,19 +77,85 @@ BUILD_DEPS=(
     vulkan-headers vulkan-icd-loader
 )
 
-echo "==> Checking build dependencies..."
-MISSING=()
-for pkg in "${BUILD_DEPS[@]}"; do
-    if ! pacman -Qi "$pkg" &>/dev/null; then
-        MISSING+=("$pkg")
-    fi
-done
+# Fedora package names, derived from the official Fedora `kwin` BuildRequires
+# (dnf repoquery --srpm --requires kwin) with the cmake()/pkgconfig() virtual
+# provides resolved to their concrete -devel packages.
+FEDORA_DEPS=(
+    cmake extra-cmake-modules gcc-c++ ninja-build
+    kf6-kdoctools-devel kf6-krunner-devel
+    plasma-wayland-protocols-devel python3 wayland-protocols-devel xorg-x11-server-Xwayland
+    kf6-kauth-devel kf6-kcmutils-devel kf6-kcolorscheme-devel kf6-kconfig-devel kf6-kcoreaddons-devel kf6-kcrash-devel kf6-kdbusaddons-devel
+    kf6-kdeclarative-devel kdecoration-devel kf6-kglobalaccel-devel kglobalacceld-devel kf6-kguiaddons-devel
+    kf6-ki18n-devel kf6-kidletime-devel kf6-kirigami-devel kf6-kitemmodels-devel kf6-knewstuff-devel knighttime-devel
+    kf6-knotifications-devel kf6-kpackage-devel kf6-kquickcharts-devel kscreenlocker-devel kf6-kservice-devel kf6-ksvg-devel
+    kwayland-devel kf6-kwidgetsaddons-devel kf6-kwindowsystem-devel kf6-kxmlgui-devel
+    kf6-kcompletion-devel kf6-kconfigwidgets-devel kf6-kiconthemes-devel kf6-ktextwidgets-devel
+    lcms2-devel libcanberra-devel libdisplay-info-devel libdrm-devel libeis-devel libepoxy-devel libevdev-devel
+    libinput-devel pipewire-devel qaccessibilityclient-qt6-devel libxcb-devel libxcvt-devel
+    libxkbcommon-devel libxkbcommon-x11-devel mesa-libEGL-devel mesa-libGL-devel mesa-libgbm-devel
+    libplasma-devel plasma-activities-devel plasma-breeze
+    qt6-qt5compat-devel qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtbase-static qt6-qtdeclarative-devel
+    qt6-qtsvg-devel qt6-qttools-devel qt6-qttools-static qt6-qtwayland-devel
+    systemd-devel systemd-libs wayland-devel xcb-util-keysyms-devel xcb-util-wm-devel xcb-util-devel xcb-util-image-devel xcb-util-cursor-devel
+    vulkan-headers vulkan-loader
+    glib2-devel libICE-devel libSM-devel libX11-devel libXcursor-devel libXi-devel libcap-devel
+)
 
-if [[ ${#MISSING[@]} -gt 0 ]]; then
-    echo "==> Installing missing build dependencies: ${MISSING[*]}"
-    sudo pacman -S --noconfirm --needed "${MISSING[@]}"
+# Determine the distro family. Some systems (e.g. Fedora with the Arch
+# pacman package installed) have *both* dnf and pacman on PATH, so we cannot
+# rely on `command -v pacman` alone. Prefer /etc/os-release, which reliably
+# identifies the actual distribution, and only fall back to binary probing.
+DISTRO_FAMILY=""
+if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    case " ${ID:-} ${ID_LIKE:-} " in
+        *" fedora "*|*" rhel "*|*" centos "*) DISTRO_FAMILY="fedora" ;;
+        *" arch "*)                           DISTRO_FAMILY="arch"   ;;
+    esac
+fi
+
+# Fall back to detecting the package manager binary if os-release was
+# inconclusive.
+if [[ -z "$DISTRO_FAMILY" ]]; then
+    if command -v dnf &>/dev/null; then
+        DISTRO_FAMILY="fedora"
+    elif command -v pacman &>/dev/null; then
+        DISTRO_FAMILY="arch"
+    fi
+fi
+
+echo "==> Checking build dependencies (distro: ${DISTRO_FAMILY:-unknown})..."
+if [[ "$DISTRO_FAMILY" == "fedora" ]]; then
+    MISSING=()
+    for pkg in "${FEDORA_DEPS[@]}"; do
+        if ! rpm -q "$pkg" &>/dev/null; then
+            MISSING+=("$pkg")
+        fi
+    done
+
+    if [[ ${#MISSING[@]} -gt 0 ]]; then
+        echo "==> Installing missing build dependencies: ${MISSING[*]}"
+        sudo dnf install -y "${MISSING[@]}"
+    else
+        echo "==> All build dependencies already installed."
+    fi
+elif [[ "$DISTRO_FAMILY" == "arch" ]]; then
+    MISSING=()
+    for pkg in "${ARCH_DEPS[@]}"; do
+        if ! pacman -Qi "$pkg" &>/dev/null; then
+            MISSING+=("$pkg")
+        fi
+    done
+
+    if [[ ${#MISSING[@]} -gt 0 ]]; then
+        echo "==> Installing missing build dependencies: ${MISSING[*]}"
+        sudo pacman -S --noconfirm --needed "${MISSING[@]}"
+    else
+        echo "==> All build dependencies already installed."
+    fi
 else
-    echo "==> All build dependencies already installed."
+    echo "==> Could not identify distro (no fedora/arch match); assuming build dependencies are already installed."
 fi
 
 # ---------------------------------------------------------------------------
