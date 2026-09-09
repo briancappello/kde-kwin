@@ -7,6 +7,17 @@
 *.tar.gz
 *.tar.zst
 
-# upstream cherry-pick patches fetched by makepkg from source=() URLs
-# (hash-named; re-downloaded each build — not authored here)
-cf00d9712316edecb4e1014bffe925136a74f072.patch
+# Patch files in this directory are, by default, upstream cherry-picks that
+# makepkg downloads from the source=() URLs (hash-named, re-fetched on every
+# build, not authored here). Listing them individually meant every new
+# backport leaked into `git status` until someone noticed, so ignore the whole
+# class and explicitly un-ignore the patches we actually own.
+#
+# Adding a new local overlay patch? Add a !-line for it here as well as to
+# PKGBUILD's source=() and sha256sums+=().
+*.patch
+!overlay.patch
+!screen-edge-corners.patch
+!swap-gesture-fingers.patch
+!virtual-desktops-debug.patch
+!virtual-desktops-fix.patch
