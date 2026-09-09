@@ -1,44 +1,40 @@
---- a/PKGBUILD	2026-06-25 07:58:51.833212348 -0600
-+++ b/PKGBUILD	2026-06-25 07:59:31.193599428 -0600
-@@ -1,6 +1,11 @@
- # Maintainer: Felix Yan <felixonmars@archlinux.org>
- # Maintainer: Antonio Rojas <arojas@archlinux.org>
+--- a/PKGBUILD
++++ b/PKGBUILD
+@@ -3,2 +3,9 @@
  # Contributor: Andrea Scarpino <andrea@archlinux.org>
 +#
 +# LOCAL OVERLAY (kde-kwin repo): this is the upstream Arch PKGBUILD with our
 +# patches appended to source=() and applied in prepare().  Keep PKGBUILD.upstream
 +# in sync with the official recipe; update.sh regenerates this file by replaying
 +# overlay.patch and fails loudly if the official recipe drifts.
++# NOTE: overlay is version-agnostic — it never touches pkgver or the tarball
++# sha256sum, so point releases don't cause packaging drift.
  
- pkgname=kwin
- pkgver=6.7.1
-@@ -82,7 +87,12 @@
-              xorg-xwayland)
- optdepends=('plasma-keyboard: virtual keyboard')
- groups=(plasma)
--source=(https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{,.sig})
-+source=(https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{,.sig}
+@@ -85,3 +92,8 @@ groups=(plasma)
+ source=(https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{,.sig}
+-        https://invent.kde.org/plasma/kwin/-/commit/2d0613ac.patch)
++        https://invent.kde.org/plasma/kwin/-/commit/2d0613ac.patch
 +        # --- local overlay patches (kde-kwin repo) ---
 +        swap-gesture-fingers.patch
 +        screen-edge-corners.patch
 +        virtual-desktops-debug.patch
 +        virtual-desktops-fix.patch)
- sha256sums=('352bfb34efad1435071960ef4cd392b110a18e1c168d1fdc5cce6b43331d0875'
-             'SKIP')
- validpgpkeys=('E0A3EB202F8E57528E13E72FD7574483BB57B18D'  # Jonathan Esk-Riddell <jr@jriddell.org>
-@@ -91,6 +101,15 @@
-               '90A968ACA84537CC27B99EAF2C8DF587A6D4AAC1'  # Nicolas Fella <nicolas.fella@kde.org>
-               '1FA881591C26B276D7A5518EEAAF29B42A678C20') # Marco Martin <notmart@gmail.com>
+ sha256sums=('db7a7dba71aaca1e5218733b80f90a998d84e2ab36e4d62d0e3ea00376c5802d'
+@@ -95,4 +107,17 @@ validpgpkeys=('E0A3EB202F8E57528E13E72FD7574483BB57B18D'  # Jonathan Esk-Riddell
  
-+prepare() {
-+  cd $pkgname-$pkgver
++# --- local overlay patch checksums (kde-kwin repo); appended so the overlay
++#     never has to touch the upstream tarball sha256sum line above ---
++sha256sums+=('577d7e3ea56a61b10d23accd7007653625d463c62a7bfaf7e6cc725c9496f9a8'
++             'a9132db8768326db31cdd5f998d1e95a426c70e1244c4b62c918418c1187a661'
++             '18fb35e32f085ee4302b4408d08e64542981579f105341ee0cf6bf8fd5796e6e'
++             'dc893fef5d039685c9fa4d7c9cdb3c561ffd5a728701a881b14246cc9de9c30b')
++
+ prepare() {
+   patch -d $pkgname-$pkgver -p1 < 2d0613ac.patch # Backport fix for mesa 26.2
 +  # --- local overlay patches (kde-kwin repo); -F0 = no fuzz, fail loudly on drift ---
++  cd $pkgname-$pkgver
 +  patch -Np1 -F0 -i ../swap-gesture-fingers.patch
 +  patch -Np1 -F0 -i ../screen-edge-corners.patch
 +  patch -Np1 -F0 -i ../virtual-desktops-debug.patch
 +  patch -Np1 -F0 -i ../virtual-desktops-fix.patch
-+}
-+
- build() {
-   cmake -B build  -S $pkgname-$pkgver \
-     -DCMAKE_INSTALL_LIBEXECDIR=lib \
+ }
