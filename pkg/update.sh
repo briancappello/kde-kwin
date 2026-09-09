@@ -63,6 +63,18 @@ if [[ "$installed" == "$newver" && "$FORCE" != 1 ]]; then
 fi
 note "Update: ${installed:-none} -> $newver"
 
+# --- 1c. reuse an already-built package if present -------------------------
+# A previous run may have built cleanly but failed BEFORE installing (classic
+# case: sudo's cached credentials expired at the publish/install step and the
+# prompt timed out). makepkg only emits the final .pkg.tar.zst after a clean
+# build, so its presence means "already built for this version" — no need to
+# fetch/overlay/checksum/rebuild; just re-publish and install it.
+prebuilt="${PKG}-${newver}-x86_64.pkg.tar.zst"
+if [[ -f "$prebuilt" && "$FORCE" != 1 ]]; then
+  note "Reusing already-built $prebuilt (previous run built but didn't install) — skipping rebuild. (--force to rebuild)"
+  pkgfile="$prebuilt"
+else
+
 # --- 2. replay overlay; loud-fail on packaging drift ----------------------
 cp "$tmp/PKGBUILD.upstream.new" "$tmp/PKGBUILD"
 if ! patch -p1 -d "$tmp" --no-backup-if-mismatch <overlay.patch >/dev/null 2>&1; then
@@ -121,6 +133,7 @@ makepkg -Cf
 pkgfile="$(ls -t ${PKG}-*-x86_64.pkg.tar.zst | head -1)"
 [[ -f "$pkgfile" ]] || die "build reported success but no package file found"
 note "Built: $pkgfile"
+fi  # end reuse-vs-build
 
 if ((BUILD_ONLY)); then
   note "--build-only: stopping before publish/install."
