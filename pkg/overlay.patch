@@ -10,17 +10,17 @@
 +# NOTE: overlay is version-agnostic — it never touches pkgver or the tarball
 +# sha256sum, so point releases don't cause packaging drift.
  
-@@ -85,3 +92,8 @@ groups=(plasma)
- source=(https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{,.sig}
--        https://invent.kde.org/plasma/kwin/-/commit/2d0613ac.patch)
-+        https://invent.kde.org/plasma/kwin/-/commit/2d0613ac.patch
+@@ -84,3 +91,8 @@ optdepends=('plasma-keyboard: virtual keyboard')
+ groups=(plasma)
+-source=(https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{,.sig})
++source=(https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{,.sig}
 +        # --- local overlay patches (kde-kwin repo) ---
 +        swap-gesture-fingers.patch
 +        screen-edge-corners.patch
 +        virtual-desktops-debug.patch
 +        virtual-desktops-fix.patch)
- sha256sums=('db7a7dba71aaca1e5218733b80f90a998d84e2ab36e4d62d0e3ea00376c5802d'
-@@ -95,4 +107,17 @@ validpgpkeys=('E0A3EB202F8E57528E13E72FD7574483BB57B18D'  # Jonathan Esk-Riddell
+ sha256sums=('6baa910b732d93c48c90f9c1cc685cc93d0b8de0cdf138c24192c045bc3a48e2'
+@@ -93,2 +105,18 @@ validpgpkeys=('E0A3EB202F8E57528E13E72FD7574483BB57B18D'  # Jonathan Esk-Riddell
  
 +# --- local overlay patch checksums (kde-kwin repo); appended so the overlay
 +#     never has to touch the upstream tarball sha256sum line above ---
@@ -29,12 +29,13 @@
 +             '18fb35e32f085ee4302b4408d08e64542981579f105341ee0cf6bf8fd5796e6e'
 +             'dc893fef5d039685c9fa4d7c9cdb3c561ffd5a728701a881b14246cc9de9c30b')
 +
- prepare() {
-   patch -d $pkgname-$pkgver -p1 < 2d0613ac.patch # Backport fix for mesa 26.2
++prepare() {
 +  # --- local overlay patches (kde-kwin repo); -F0 = no fuzz, fail loudly on drift ---
 +  cd $pkgname-$pkgver
 +  patch -Np1 -F0 -i ../swap-gesture-fingers.patch
 +  patch -Np1 -F0 -i ../screen-edge-corners.patch
 +  patch -Np1 -F0 -i ../virtual-desktops-debug.patch
 +  patch -Np1 -F0 -i ../virtual-desktops-fix.patch
- }
++}
++
+ build() {
