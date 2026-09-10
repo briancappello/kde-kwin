@@ -10,6 +10,10 @@
 #      the diff so you can re-overlay. This is the "loud" gate for packaging drift.
 #      The overlay is version-agnostic: it never edits pkgver or the tarball
 #      sha256 line, so routine point releases no longer trip this gate.
+#   2b. Assert structural invariants on the overlaid result (exactly one
+#      prepare(), source/sha256sums counts in step, our 4 patches wired in).
+#      Context matching is blind to ADDITIVE upstream drift; without this a
+#      re-added upstream prepare() would silently shadow ours (or ours theirs).
 #   3. Refresh ONLY the upstream tarball checksum in the primary sha256sums
 #      array (our overlay patch checksums live in a separate `sha256sums+=(...)`
 #      that must be preserved — `updpkgsums` would clobber it, so we don't use it).
@@ -76,15 +80,47 @@ if [[ -f "$prebuilt" && "$FORCE" != 1 ]]; then
 else
 
 # --- 2. replay overlay; loud-fail on packaging drift ----------------------
-cp "$tmp/PKGBUILD.upstream.new" "$tmp/PKGBUILD"
-if ! patch -p1 -d "$tmp" --no-backup-if-mismatch <overlay.patch >/dev/null 2>&1; then
+drift_die() {
   echo "------------------------------------------------------------------" >&2
-  echo "!! overlay.patch did NOT apply to the new upstream PKGBUILD." >&2
+  echo "!! $1" >&2
   echo "!! Upstream changed their packaging. Review and re-overlay:" >&2
   echo "------------------------------------------------------------------" >&2
   diff -u PKGBUILD.upstream "$tmp/PKGBUILD.upstream.new" >&2 || true
   die "packaging drift — see diff above; update PKGBUILD + PKGBUILD.upstream + overlay.patch"
+}
+
+cp "$tmp/PKGBUILD.upstream.new" "$tmp/PKGBUILD"
+if ! patch -p1 -d "$tmp" --no-backup-if-mismatch <overlay.patch >/dev/null 2>&1; then
+  drift_die "overlay.patch did NOT apply to the new upstream PKGBUILD."
 fi
+
+# --- 2b. structural invariants on the overlaid result ---------------------
+# Context matching alone only catches drift that *collides* with our hunks. It
+# is blind to ADDITIVE upstream changes, and one of those fails silently:
+# if upstream re-adds its own prepare() (as 6.7.4-6 did for a mesa backport),
+# overlay.patch still applies, the file ends up with TWO prepare() definitions,
+# bash keeps the LAST one (ours) — and upstream's backport is dropped from a
+# perfectly green build. These asserts turn that into a loud stop.
+note "Checking overlaid PKGBUILD invariants..."
+_nprep="$(grep -c '^prepare() {' "$tmp/PKGBUILD" || true)"
+[[ "$_nprep" == 1 ]] \
+  || drift_die "expected exactly 1 prepare() in the overlaid PKGBUILD, found $_nprep (upstream likely added its own; merge it into ours by hand)."
+
+# Every source entry needs a checksum; a mismatch means upstream added or
+# removed a source and our appended sha256sums+=() no longer lines up.
+_nsrc="$(. "$tmp/PKGBUILD"; echo "${#source[@]}")"
+_nsum="$(. "$tmp/PKGBUILD"; echo "${#sha256sums[@]}")"
+[[ "$_nsrc" == "$_nsum" ]] \
+  || drift_die "source=() has $_nsrc entries but sha256sums has $_nsum."
+
+# Our patches must actually be wired into source=() and applied in prepare().
+# NB: the LAST source entry carries the array's closing paren, hence `)?`.
+for _p in swap-gesture-fingers screen-edge-corners virtual-desktops-debug virtual-desktops-fix; do
+  grep -qE "^ *$_p\.patch\)?\$" "$tmp/PKGBUILD" \
+    || drift_die "local patch $_p.patch is missing from source=() after overlay."
+  grep -q "patch -Np1 -F0 -i \.\./$_p\.patch\$" "$tmp/PKGBUILD" \
+    || drift_die "local patch $_p.patch is never applied in prepare() after overlay."
+done
 
 # adopt the refreshed files (only after the overlay applied cleanly)
 cp "$tmp/PKGBUILD.upstream.new" PKGBUILD.upstream
