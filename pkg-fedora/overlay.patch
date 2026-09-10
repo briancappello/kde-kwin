@@ -1,0 +1,23 @@
+--- a/kwin.spec
++++ b/kwin.spec
+@@ -19,6 +19,20 @@
+ 
+ ## proposed patches
+ 
++# --- LOCAL OVERLAY (kde-kwin repo) ---------------------------------------
++# This spec is the official Fedora kwin.spec with our patches appended here.
++# update.sh regenerates it by replaying overlay.patch onto a freshly fetched
++# SRPM spec, and fails loudly if Fedora's packaging drifts.
++#
++# Numbering starts at 1000 to stay clear of future Fedora PatchN additions.
++# %%autosetup -p1 applies patches in numeric order, so ours land after every
++# Fedora patch, and with %%_default_patch_fuzz == 0 a stale patch aborts the
++# build instead of silently applying at the wrong offset.
++Patch1000: swap-gesture-fingers.patch
++Patch1001: screen-edge-corners.patch
++Patch1002: virtual-desktops-debug.patch
++Patch1003: virtual-desktops-fix.patch
++
+ 
+ # Base
+ BuildRequires:  extra-cmake-modules
