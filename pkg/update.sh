@@ -166,8 +166,11 @@ note "Building package (makepkg)..."
 # generate cache"), and old kwin-<oldver>/ trees pile up in src/.
 makepkg -Cf
 
-pkgfile="$(ls -t ${PKG}-*-x86_64.pkg.tar.zst | head -1)"
-[[ -f "$pkgfile" ]] || die "build reported success but no package file found"
+# Name the file exactly: a `${PKG}-*` glob also matches the split
+# `${PKG}-debug-*` package (makepkg's default `debug` option), and that one is
+# usually written last, so "newest match" would publish the debug package.
+pkgfile="$(. ./PKGBUILD; echo "${pkgname}-${pkgver}-${pkgrel}-x86_64.pkg.tar.zst")"
+[[ -f "$pkgfile" ]] || die "build reported success but $pkgfile was not found"
 note "Built: $pkgfile"
 fi  # end reuse-vs-build
 
