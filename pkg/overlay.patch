@@ -24,10 +24,10 @@
  
 +# --- local overlay patch checksums (kde-kwin repo); appended so the overlay
 +#     never has to touch the upstream tarball sha256sum line above ---
-+sha256sums+=('577d7e3ea56a61b10d23accd7007653625d463c62a7bfaf7e6cc725c9496f9a8'
-+             'a9132db8768326db31cdd5f998d1e95a426c70e1244c4b62c918418c1187a661'
-+             '18fb35e32f085ee4302b4408d08e64542981579f105341ee0cf6bf8fd5796e6e'
-+             'dc893fef5d039685c9fa4d7c9cdb3c561ffd5a728701a881b14246cc9de9c30b')
++sha256sums+=('764d68f2ec21bb04c1194f619aed4e8150dcb3ce27cc5507d0132ac7a6863d9f'
++             'ba441910f09ef3b0d620dfac649f4f4466797eabeaeaaa43aca0ffeeb4cfea15'
++             '0644e4c8fce38395c4882b7003d8ad1ef1c06c1652f3ac78ddadedf84b9fc456'
++             'ced0fa2c7bb0335637b8464543163819b5a551d66934297119c80ebd22f72b24')
 +
 +prepare() {
 +  # --- local overlay patches (kde-kwin repo); -F0 = no fuzz, fail loudly on drift ---

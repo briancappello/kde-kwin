@@ -1,8 +1,8 @@
 diff --git a/src/pointer_input.cpp b/src/pointer_input.cpp
-index 161cf3d..3a65a99 100644
+index 80b3e37..85e931f 100644
 --- a/src/pointer_input.cpp
 +++ b/src/pointer_input.cpp
-@@ -884,6 +884,14 @@ QPointF PointerInputRedirection::applyEdgeBarrier(const QPointF &pos, const QPoi
+@@ -843,6 +843,14 @@ QPointF PointerInputRedirection::applyEdgeBarrier(const QPointF &pos, const QPoi
          return pos;
      }
      const LogicalOutput *lastOutput = workspace()->outputAt(m_pos);
@@ -18,10 +18,10 @@ index 161cf3d..3a65a99 100644
      const auto type = edgeBarrierType(newPos, lastOutput->geometry());
      if (m_lastEdgeBarrierType != type) {
 diff --git a/src/screenedge.cpp b/src/screenedge.cpp
-index 6fc4f7e..46dff3b 100644
+index dd1359a..58128e6 100644
 --- a/src/screenedge.cpp
 +++ b/src/screenedge.cpp
-@@ -1047,6 +1047,110 @@ bool ScreenEdges::remainActiveOnFullscreen() const
+@@ -1048,6 +1048,110 @@ bool ScreenEdges::remainActiveOnFullscreen() const
      return m_remainActiveOnFullscreen;
  }
  
@@ -132,7 +132,7 @@ index 6fc4f7e..46dff3b 100644
  void ScreenEdges::recreateEdges()
  {
      std::vector<std::unique_ptr<Edge>> oldEdges = std::move(m_edges);
-@@ -1055,34 +1159,65 @@ void ScreenEdges::recreateEdges()
+@@ -1056,34 +1160,65 @@ void ScreenEdges::recreateEdges()
      Region processedRegion;
  
      const auto outputs = workspace()->outputs();
@@ -208,7 +208,7 @@ index 6fc4f7e..46dff3b 100644
          }
      }
      auto split = std::partition(oldEdges.begin(), oldEdges.end(), [](const auto &edge) {
-@@ -1112,7 +1247,7 @@ void ScreenEdges::recreateEdges()
+@@ -1113,7 +1248,7 @@ void ScreenEdges::recreateEdges()
      }
  }
  
@@ -217,7 +217,7 @@ index 6fc4f7e..46dff3b 100644
  {
      if (border != ElectricRight && border != KWin::ElectricLeft) {
          return;
-@@ -1140,13 +1275,22 @@ void ScreenEdges::createVerticalEdge(ElectricBorder border, const Rect &screen,
+@@ -1141,13 +1276,22 @@ void ScreenEdges::createVerticalEdge(ElectricBorder border, const Rect &screen,
          return;
      }
      if (isAllScreenCorners()) {
@@ -243,7 +243,7 @@ index 6fc4f7e..46dff3b 100644
  {
      if (border != ElectricTop && border != ElectricBottom) {
          return;
-@@ -1167,8 +1311,17 @@ void ScreenEdges::createHorizontalEdge(ElectricBorder border, const Rect &screen
+@@ -1168,8 +1312,17 @@ void ScreenEdges::createHorizontalEdge(ElectricBorder border, const Rect &screen
          return;
      }
      if (isAllScreenCorners()) {
@@ -264,7 +264,7 @@ index 6fc4f7e..46dff3b 100644
      const int y = (border == ElectricTop) ? screen.top() : screen.bottom() - m_touchTarget;
      m_edges.push_back(createEdge(border, x, y, width, m_touchTarget, output));
 diff --git a/src/screenedge.h b/src/screenedge.h
-index ea0a8ab..830be05 100644
+index 5f0bb2f..71579f2 100644
 --- a/src/screenedge.h
 +++ b/src/screenedge.h
 @@ -28,6 +28,7 @@
@@ -272,9 +272,9 @@ index ea0a8ab..830be05 100644
  
  #include <memory>
 +#include <vector>
- #include <xcb/xcb.h>
  
  class QAction;
+ 
 @@ -198,6 +199,17 @@ private:
   *
   * @todo change way how Effects/Scripts can reserve an edge and are notified.
@@ -293,7 +293,7 @@ index ea0a8ab..830be05 100644
  class KWIN_EXPORT ScreenEdges : public QObject
  {
      Q_OBJECT
-@@ -367,8 +379,8 @@ private:
+@@ -368,8 +380,8 @@ private:
      void setCursorPushBackDistance(const QSize &distance);
      void setTimeThreshold(std::chrono::milliseconds threshold);
      void setReActivationThreshold(std::chrono::milliseconds threshold);

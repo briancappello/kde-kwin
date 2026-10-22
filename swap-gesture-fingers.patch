@@ -1,9 +1,9 @@
 diff --git a/src/plugins/overview/overvieweffect.cpp b/src/plugins/overview/overvieweffect.cpp
-index d9be30e..015c0ac 100644
+index d50cbae..9285d96 100644
 --- a/src/plugins/overview/overvieweffect.cpp
 +++ b/src/plugins/overview/overvieweffect.cpp
 @@ -33,16 +33,16 @@ OverviewEffect::OverviewEffect()
-     , m_shutdownTimer(new QTimer(this))
+     , m_manager(new KRunner::RunnerManager(this))
  {
      auto gesture = new EffectTogglableGesture(m_overviewState);
 -    gesture->addTouchpadSwipeGesture(SwipeDirection::Up, 4);
@@ -23,10 +23,10 @@ index d9be30e..015c0ac 100644
  
      connect(m_overviewState, &EffectTogglableState::inProgressChanged, this, &OverviewEffect::overviewGestureInProgressChanged);
 diff --git a/src/virtualdesktops.cpp b/src/virtualdesktops.cpp
-index a7414d2..2bee4a6 100644
+index 926e63a..eeea41f 100644
 --- a/src/virtualdesktops.cpp
 +++ b/src/virtualdesktops.cpp
-@@ -805,20 +805,6 @@ void VirtualDesktopManager::initShortcuts()
+@@ -810,20 +810,6 @@ void VirtualDesktopManager::initShortcuts()
      };
      input()->registerTouchpadSwipeShortcut(SwipeDirection::Left, 3, m_swipeGestureReleasedX.get(), left);
      input()->registerTouchpadSwipeShortcut(SwipeDirection::Right, 3, m_swipeGestureReleasedX.get(), right);

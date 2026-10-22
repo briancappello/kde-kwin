@@ -10,9 +10,9 @@
 # sha256sum, so point releases don't cause packaging drift.
 
 pkgname=kwin
-pkgver=6.7.5
+pkgver=6.8.1
 _dirver=$(echo $pkgver | cut -d. -f1-3)
-pkgrel=2
+pkgrel=1
 pkgdesc='An easy to use, but flexible, Wayland compositor'
 arch=(x86_64)
 url='https://kde.org/plasma-desktop/'
@@ -43,6 +43,7 @@ depends=(aurorae
          knotifications
          kpackage
          kquickcharts
+         krunner
          kscreenlocker
          kservice
          ksvg
@@ -95,7 +96,7 @@ source=(https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{
         screen-edge-corners.patch
         virtual-desktops-debug.patch
         virtual-desktops-fix.patch)
-sha256sums=('6baa910b732d93c48c90f9c1cc685cc93d0b8de0cdf138c24192c045bc3a48e2'
+sha256sums=('f3d725f81061c1ba97fdef8aeb2101a5c5e03c77f11e9a2abaa1dfed4489d3b6'
             'SKIP')
 validpgpkeys=('E0A3EB202F8E57528E13E72FD7574483BB57B18D'  # Jonathan Esk-Riddell <jr@jriddell.org>
               '0AAC775BB6437A8D9AF7A3ACFE0784117FBCE11D'  # Bhushan Shah <bshah@kde.org>
@@ -105,10 +106,10 @@ validpgpkeys=('E0A3EB202F8E57528E13E72FD7574483BB57B18D'  # Jonathan Esk-Riddell
 
 # --- local overlay patch checksums (kde-kwin repo); appended so the overlay
 #     never has to touch the upstream tarball sha256sum line above ---
-sha256sums+=('577d7e3ea56a61b10d23accd7007653625d463c62a7bfaf7e6cc725c9496f9a8'
-             'a9132db8768326db31cdd5f998d1e95a426c70e1244c4b62c918418c1187a661'
-             '18fb35e32f085ee4302b4408d08e64542981579f105341ee0cf6bf8fd5796e6e'
-             'dc893fef5d039685c9fa4d7c9cdb3c561ffd5a728701a881b14246cc9de9c30b')
+sha256sums+=('764d68f2ec21bb04c1194f619aed4e8150dcb3ce27cc5507d0132ac7a6863d9f'
+             'ba441910f09ef3b0d620dfac649f4f4466797eabeaeaaa43aca0ffeeb4cfea15'
+             '0644e4c8fce38395c4882b7003d8ad1ef1c06c1652f3ac78ddadedf84b9fc456'
+             'ced0fa2c7bb0335637b8464543163819b5a551d66934297119c80ebd22f72b24')
 
 prepare() {
   # --- local overlay patches (kde-kwin repo); -F0 = no fuzz, fail loudly on drift ---
@@ -121,12 +122,11 @@ prepare() {
 
 build() {
   cmake -B build  -S $pkgname-$pkgver \
-    -DCMAKE_INSTALL_LIBEXECDIR=lib \
+    -DKDE_INSTALL_LIBEXECDIR=lib \
     -DBUILD_TESTING=OFF
   cmake --build build
 }
 
 package() {
   DESTDIR="$pkgdir" cmake --install build
-  setcap CAP_SYS_NICE=+ep "$pkgdir"/usr/bin/kwin_wayland
 }

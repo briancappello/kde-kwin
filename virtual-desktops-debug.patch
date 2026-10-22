@@ -388,7 +388,7 @@ index 76d921d..c5bfede 100644
              Q_EMIT userModifiedChanged();
          }
 diff --git a/src/kcms/desktop/ui/main.qml b/src/kcms/desktop/ui/main.qml
-index 834eadc..2032fc0 100644
+index 5df3824..15b29a4 100644
 --- a/src/kcms/desktop/ui/main.qml
 +++ b/src/kcms/desktop/ui/main.qml
 @@ -32,7 +32,10 @@ KCM.ScrollViewKCM {
