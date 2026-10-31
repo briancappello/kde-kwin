@@ -25,6 +25,14 @@
 #   ./update.sh              # fetch latest upstream, overlay, build, publish, install
 #   ./update.sh --build-only # build only; skip repo publish + pacman install
 #   ./update.sh --no-install # build + publish to arches-local, but don't pacman -U
+#   ./update.sh --list-strays # only list untracked kwin files (exit 1 if any)
+#
+# Every install run (and the "already current" early exit) also removes stray
+# files: things under kwin's install paths that pacman does not track. pacman
+# only deletes files it owns, so anything a raw `sudo cmake --install` once
+# wrote (the pre-Sep-2026 build-and-install.sh did this for 6.7.0) survives
+# every upgrade. The 6.7.0 KWinTargets-release.cmake left that way is picked up
+# by KWinTargets.cmake's glob and points Release builds at a stale libkwin.
 #
 set -euo pipefail
 
@@ -39,11 +47,13 @@ UPSTREAM_RAW='https://gitlab.archlinux.org/archlinux/packaging/packages/kwin/-/r
 BUILD_ONLY=0
 NO_INSTALL=0
 FORCE=0
+LIST_STRAYS=0
 for a in "$@"; do
   case "$a" in
     --build-only) BUILD_ONLY=1 ;;
     --no-install) NO_INSTALL=1 ;;
     --force) FORCE=1 ;;
+    --list-strays) LIST_STRAYS=1 ;;
     *) echo "unknown arg: $a" >&2; exit 2 ;;
   esac
 done
@@ -51,9 +61,45 @@ done
 die() { echo "!! $*" >&2; exit 1; }
 note() { echo "==> $*"; }
 
-# --- 1. fetch latest upstream PKGBUILD ------------------------------------
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+
+# --- stray (untracked) kwin files -----------------------------------------
+# Candidates are (a) anything directly inside a directory that only $PKG owns,
+# and (b) any sibling of a versioned library $PKG owns (libkwin.so.6.8.1 ->
+# libkwin.so.*). A candidate is a stray if no package owns it.
+find_strays() {
+  LC_ALL=C pacman -Ql | awk '{ pkg = $1; sub(/^[^ ]+ /, ""); print pkg "\t" $0 }' >"$tmp/owned.all"
+  cut -f2- "$tmp/owned.all" | LC_ALL=C sort -u >"$tmp/owned.paths"
+  awk -F'\t' -v p="$PKG" '$1 == p { print $2 }' "$tmp/owned.all" >"$tmp/pkg.paths"
+  awk -F'\t' -v p="$PKG" '$2 ~ /\/$/ { if ($1 == p) mine[$2] = 1; else other[$2] = 1 }
+    END { for (d in mine) if (!(d in other)) print d }' "$tmp/owned.all" >"$tmp/pkg.dirs"
+  {
+    while IFS= read -r d; do
+      [[ -d "$d" ]] && find "$d" -mindepth 1 -maxdepth 1 ! -type d
+    done <"$tmp/pkg.dirs"
+    grep -E '\.so\.[0-9.]+$' "$tmp/pkg.paths" | sed -E 's/\.so\..*$/.so/' | sort -u |
+      while IFS= read -r stem; do compgen -G "$stem.*" || true; done
+  } | LC_ALL=C sort -u | LC_ALL=C comm -23 - "$tmp/owned.paths"
+}
+
+remove_strays() {
+  local strays
+  mapfile -t strays < <(find_strays)
+  ((${#strays[@]})) || return 0
+  note "Removing ${#strays[@]} file(s) under kwin's paths that pacman does not track [sudo]:"
+  printf '    %s\n' "${strays[@]}"
+  sudo rm -f -- "${strays[@]}"
+}
+
+if ((LIST_STRAYS)); then
+  mapfile -t strays < <(find_strays)
+  ((${#strays[@]})) || { note "No stray kwin files."; exit 0; }
+  printf '%s\n' "${strays[@]}"
+  exit 1
+fi
+
+# --- 1. fetch latest upstream PKGBUILD ------------------------------------
 note "Fetching latest upstream kwin PKGBUILD..."
 curl -fsSL "$UPSTREAM_RAW" -o "$tmp/PKGBUILD.upstream.new" \
   || die "could not fetch upstream PKGBUILD from $UPSTREAM_RAW"
@@ -63,6 +109,7 @@ newver="$(. "$tmp/PKGBUILD.upstream.new"; echo "$pkgver-$pkgrel")"
 installed="$(pacman -Q "$PKG" 2>/dev/null | awk '{print $2}' || true)"
 if [[ "$installed" == "$newver" && "$FORCE" != 1 ]]; then
   note "$PKG already at $newver (patched) — nothing to do. (--force to rebuild)"
+  ((BUILD_ONLY || NO_INSTALL)) || remove_strays
   exit 0
 fi
 note "Update: ${installed:-none} -> $newver"
@@ -191,6 +238,7 @@ fi
 
 note "Installing (sudo pacman -U)..."
 sudo pacman -U --noconfirm "$REPO_DIR/$pkgfile"
+remove_strays
 
 cat <<EOF
 
