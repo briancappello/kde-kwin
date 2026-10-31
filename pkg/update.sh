@@ -11,7 +11,7 @@
 #      The overlay is version-agnostic: it never edits pkgver or the tarball
 #      sha256 line, so routine point releases no longer trip this gate.
 #   2b. Assert structural invariants on the overlaid result (exactly one
-#      prepare(), source/sha256sums counts in step, our 4 patches wired in).
+#      prepare(), source/sha256sums counts in step, our 5 patches wired in).
 #      Context matching is blind to ADDITIVE upstream drift; without this a
 #      re-added upstream prepare() would silently shadow ours (or ours theirs).
 #   3. Refresh ONLY the upstream tarball checksum in the primary sha256sums
@@ -164,7 +164,7 @@ _nsum="$(. "$tmp/PKGBUILD"; echo "${#sha256sums[@]}")"
 
 # Our patches must actually be wired into source=() and applied in prepare().
 # NB: the LAST source entry carries the array's closing paren, hence `)?`.
-for _p in swap-gesture-fingers screen-edge-corners virtual-desktops-debug virtual-desktops-fix; do
+for _p in swap-gesture-fingers screen-edge-corners virtual-desktops-debug virtual-desktops-fix evdi-resume-fix; do
   grep -qE "^ *$_p\.patch\)?\$" "$tmp/PKGBUILD" \
     || drift_die "local patch $_p.patch is missing from source=() after overlay."
   grep -q "patch -Np1 -F0 -i \.\./$_p\.patch\$" "$tmp/PKGBUILD" \

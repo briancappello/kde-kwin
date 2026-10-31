@@ -1,0 +1,70 @@
+diff --git a/src/backends/drm/drm_backend.cpp b/src/backends/drm/drm_backend.cpp
+index 896c260..5f31787 100644
+--- a/src/backends/drm/drm_backend.cpp
++++ b/src/backends/drm/drm_backend.cpp
+@@ -38,6 +38,7 @@
+ #include <cerrno>
+ #include <ranges>
+ #include <sys/stat.h>
++#include <sys/sysmacros.h>
+ #include <thread>
+ #include <unistd.h>
+ // drm
+@@ -127,20 +128,36 @@ bool DrmBackend::initialize()
+         if (findGpu(deviceId)) {
+             return;
+         }
++        QString primaryNode;
+         drmDevice *device = nullptr;
+-        if (drmGetDeviceFromDevId(deviceId, 0, &device) != 0) {
+-            qCWarning(KWIN_DRM, "drmGetDeviceFromDevId failed! %s", strerror(errno));
+-            return;
+-        }
+-        if (!(device->available_nodes & (1 << DRM_NODE_PRIMARY))) {
++        if (const int ret = drmGetDeviceFromDevId(deviceId, 0, &device); ret == 0) {
++            if (device->available_nodes & (1 << DRM_NODE_PRIMARY)) {
++                primaryNode = QString::fromLocal8Bit(device->nodes[DRM_NODE_PRIMARY]);
++            }
+             drmFreeDevice(&device);
++        } else {
++            // libdrm tells platform devices apart only by their devicetree name.
++            // Devices without one, such as every evdi (DisplayLink) instance, all
++            // compare equal and get merged, so only the first resolves and the
++            // others would never come back after a session pause. Ask udev.
++            const QByteArray sysPath = QByteArrayLiteral("/sys/dev/char/") + QByteArray::number(major(deviceId)) + ':' + QByteArray::number(minor(deviceId));
++            if (const auto udevDevice = m_udev->deviceFromSyspath(sysPath.constData())) {
++                int devNum = -1;
++                if (sscanf(udevDevice->sysName().data(), DRM_PRIMARY_MINOR_NAME "%d", &devNum) == 1) {
++                    primaryNode = udevDevice->devNode();
++                }
++            }
++            if (primaryNode.isEmpty()) {
++                qCWarning(KWIN_DRM, "drmGetDeviceFromDevId failed! %s", strerror(-ret));
++                return;
++            }
++        }
++        if (primaryNode.isEmpty()) {
+             return;
+         }
+-        const auto gpu = addGpu(device->nodes[DRM_NODE_PRIMARY]);
+-        if (gpu) {
++        if (addGpu(primaryNode)) {
+             updateOutputs();
+         }
+-        drmFreeDevice(&device);
+     });
+     connect(m_session, &Session::awoke, this, [this]() {
+         // some drivers for old GPUs have problems after suspend, which
+diff --git a/src/compositor.cpp b/src/compositor.cpp
+index 658d550..0aa0e57 100644
+--- a/src/compositor.cpp
++++ b/src/compositor.cpp
+@@ -478,7 +478,7 @@ static bool prepareDirectScanout(RenderView *view, LogicalOutput *logicalOutput,
+         return false;
+     }
+     const auto compatibleDevice = GpuManager::self()->compatibleRenderDevice(layer->scanoutDevice());
+-    if (attrs->device != layer->scanoutDevice()->deviceId() && attrs->device != compatibleDevice->deviceId()) {
++    if (attrs->device != layer->scanoutDevice()->deviceId() && (!compatibleDevice || attrs->device != compatibleDevice->deviceId())) {
+         // Disallow direct scanout between GPUs, as
+         // - there are some significant driver bugs with direct scanout from other GPUs,
+         //   like https://gitlab.freedesktop.org/drm/amd/-/issues/2075

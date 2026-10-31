@@ -63,6 +63,14 @@
 #                                       renamed both). Now each id is validated
 #                                       as a unique UUID, reassigned if not,
 #                                       and the heal is persisted once.
+#   5. evdi-resume-fix.patch         -- after suspend/VT switch, KWin re-adds
+#                                       each GPU via drmGetDeviceFromDevId.
+#                                       libdrm merges evdi (DisplayLink)
+#                                       devices because they have no
+#                                       devicetree name, so all but the first
+#                                       failed and their monitors stayed off.
+#                                       Falls back to a udev lookup. Arch only
+#                                       for now: not yet in pkg-fedora.
 #
 # Usage:
 #   ./build-and-install.sh              # build + install
