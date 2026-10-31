@@ -1,6 +1,8 @@
 --- a/PKGBUILD
 +++ b/PKGBUILD
-@@ -3,2 +3,9 @@
+@@ -1,6 +1,13 @@
+ # Maintainer: Felix Yan <felixonmars@archlinux.org>
+ # Maintainer: Antonio Rojas <arojas@archlinux.org>
  # Contributor: Andrea Scarpino <andrea@archlinux.org>
 +#
 +# LOCAL OVERLAY (kde-kwin repo): this is the upstream Arch PKGBUILD with our
@@ -10,17 +12,23 @@
 +# NOTE: overlay is version-agnostic — it never touches pkgver or the tarball
 +# sha256sum, so point releases don't cause packaging drift.
  
-@@ -84,3 +91,8 @@ optdepends=('plasma-keyboard: virtual keyboard')
- groups=(plasma)
--source=(https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{,.sig})
-+source=(https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{,.sig}
-+        # --- local overlay patches (kde-kwin repo) ---
-+        swap-gesture-fingers.patch
-+        screen-edge-corners.patch
-+        virtual-desktops-debug.patch
-+        virtual-desktops-fix.patch)
- sha256sums=('6baa910b732d93c48c90f9c1cc685cc93d0b8de0cdf138c24192c045bc3a48e2'
-@@ -93,2 +105,18 @@ validpgpkeys=('E0A3EB202F8E57528E13E72FD7574483BB57B18D'  # Jonathan Esk-Riddell
+ pkgname=kwin
+ pkgver=6.8.1
+@@ -95,6 +102,11 @@
+   https://download.kde.org/stable/plasma/$_dirver/$pkgname-$pkgver.tar.xz{,.sig}
+   https://invent.kde.org/plasma/kwin/-/commit/64850f81e1cc6d67235fcb58ff4b1be4cac349bf.patch
+   https://invent.kde.org/plasma/kwin/-/commit/83ad3261da595f02b4dadbc14d00223ffae0d72c.patch
++  # --- local overlay patches (kde-kwin repo) ---
++  swap-gesture-fingers.patch
++  screen-edge-corners.patch
++  virtual-desktops-debug.patch
++  virtual-desktops-fix.patch
+ )
+ sha256sums=('f3d725f81061c1ba97fdef8aeb2101a5c5e03c77f11e9a2abaa1dfed4489d3b6'
+             'SKIP'
+@@ -106,10 +118,24 @@
+               '90A968ACA84537CC27B99EAF2C8DF587A6D4AAC1'  # Nicolas Fella <nicolas.fella@kde.org>
+               '1FA881591C26B276D7A5518EEAAF29B42A678C20') # Marco Martin <notmart@gmail.com>
  
 +# --- local overlay patch checksums (kde-kwin repo); appended so the overlay
 +#     never has to touch the upstream tarball sha256sum line above ---
@@ -29,13 +37,17 @@
 +             '0644e4c8fce38395c4882b7003d8ad1ef1c06c1652f3ac78ddadedf84b9fc456'
 +             'ced0fa2c7bb0335637b8464543163819b5a551d66934297119c80ebd22f72b24')
 +
-+prepare() {
-+  # --- local overlay patches (kde-kwin repo); -F0 = no fuzz, fail loudly on drift ---
+ prepare() {
+ # Fix glitches on NVIDIA
+   patch -d $pkgname-$pkgver -p1 < 64850f81e1cc6d67235fcb58ff4b1be4cac349bf.patch
+   patch -d $pkgname-$pkgver -p1 < 83ad3261da595f02b4dadbc14d00223ffae0d72c.patch
++  # --- local overlay patches (kde-kwin repo); applied after upstream's own
++  #     backports above; -F0 = no fuzz, fail loudly on drift ---
 +  cd $pkgname-$pkgver
 +  patch -Np1 -F0 -i ../swap-gesture-fingers.patch
 +  patch -Np1 -F0 -i ../screen-edge-corners.patch
 +  patch -Np1 -F0 -i ../virtual-desktops-debug.patch
 +  patch -Np1 -F0 -i ../virtual-desktops-fix.patch
-+}
-+
+ }
+ 
  build() {
