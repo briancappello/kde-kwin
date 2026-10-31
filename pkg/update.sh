@@ -27,8 +27,7 @@
 #   ./update.sh --no-install # build + publish to arches-local, but don't pacman -U
 #   ./update.sh --list-strays # only list untracked kwin files (exit 1 if any)
 #
-# Every install run (and the "already current" early exit) also removes stray
-# files: things under kwin's install paths that pacman does not track. pacman
+# Every default run (what `sysupdate` calls) first removes stray files: things under kwin's install paths that pacman does not track. pacman
 # only deletes files it owns, so anything a raw `sudo cmake --install` once
 # wrote (the pre-Sep-2026 build-and-install.sh did this for 6.7.0) survives
 # every upgrade. The 6.7.0 KWinTargets-release.cmake left that way is picked up
@@ -99,6 +98,10 @@ if ((LIST_STRAYS)); then
   exit 1
 fi
 
+# Strays don't depend on the new build, so clean them up front: a run that
+# later stops on packaging drift or a failed build still removes them.
+((BUILD_ONLY || NO_INSTALL)) || remove_strays
+
 # --- 1. fetch latest upstream PKGBUILD ------------------------------------
 note "Fetching latest upstream kwin PKGBUILD..."
 curl -fsSL "$UPSTREAM_RAW" -o "$tmp/PKGBUILD.upstream.new" \
@@ -109,7 +112,6 @@ newver="$(. "$tmp/PKGBUILD.upstream.new"; echo "$pkgver-$pkgrel")"
 installed="$(pacman -Q "$PKG" 2>/dev/null | awk '{print $2}' || true)"
 if [[ "$installed" == "$newver" && "$FORCE" != 1 ]]; then
   note "$PKG already at $newver (patched) — nothing to do. (--force to rebuild)"
-  ((BUILD_ONLY || NO_INSTALL)) || remove_strays
   exit 0
 fi
 note "Update: ${installed:-none} -> $newver"
@@ -238,7 +240,6 @@ fi
 
 note "Installing (sudo pacman -U)..."
 sudo pacman -U --noconfirm "$REPO_DIR/$pkgfile"
-remove_strays
 
 cat <<EOF
 
